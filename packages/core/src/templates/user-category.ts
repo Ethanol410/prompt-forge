@@ -1,4 +1,5 @@
 import type { CategoryBundle } from '../models/category-bundle.js';
+import type { ParamsSchema, TemplateParam } from '../models/template.js';
 import { slugify } from '../util/slug.js';
 import { SYSTEM_CATEGORIES } from './system-categories.js';
 
@@ -6,7 +7,11 @@ export type UserCategoryErrorCode =
   | 'empty_name'
   | 'empty_skeleton'
   | 'missing_intent_placeholder'
-  | 'empty_meta_prompt';
+  | 'empty_meta_prompt'
+  | 'invalid_param_key'
+  | 'duplicate_param_key';
+
+const PARAM_KEY_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]*$/;
 
 export class UserCategoryError extends Error {
   readonly code: UserCategoryErrorCode;
@@ -27,6 +32,40 @@ export interface UserCategoryInput {
   readonly metaPrompt: string;
   /** Version du template (incrémentée à l'édition). Défaut 1. */
   readonly version?: number;
+  /** Variables du template (F-C3). */
+  readonly params?: readonly TemplateParam[];
+}
+
+/** Valide et normalise les variables d'un template (clés uniques, identifiant valide, ≠ intent). */
+function buildParamsSchema(params: readonly TemplateParam[] | undefined): ParamsSchema | null {
+  if (!params || params.length === 0) return null;
+  const seen = new Set<string>();
+  const cleaned: TemplateParam[] = [];
+  for (const param of params) {
+    const key = param.key.trim();
+    if (!PARAM_KEY_PATTERN.test(key) || key === 'intent') {
+      throw new UserCategoryError(
+        'invalid_param_key',
+        `Clé de variable invalide : « ${param.key} » (lettres/chiffres/_, ne commence pas par un chiffre, ≠ « intent »).`,
+      );
+    }
+    if (seen.has(key)) {
+      throw new UserCategoryError('duplicate_param_key', `Variable en double : « ${key} ».`);
+    }
+    seen.add(key);
+    const options = param.type === 'select'
+      ? param.options?.map((o) => o.trim()).filter((o) => o.length > 0) ?? []
+      : undefined;
+    cleaned.push({
+      key,
+      label: param.label.trim() || key,
+      type: param.type,
+      required: param.required,
+      defaultValue: param.defaultValue,
+      ...(options ? { options } : {}),
+    });
+  }
+  return { params: cleaned };
 }
 
 /**
@@ -51,6 +90,8 @@ export function buildUserCategory(input: UserCategoryInput): CategoryBundle {
     throw new UserCategoryError('empty_meta_prompt', "L'instruction d'optimisation (méta-prompt) est requise.");
   }
 
+  const paramsSchema = buildParamsSchema(input.params);
+
   return {
     category: {
       id: input.id,
@@ -66,7 +107,7 @@ export function buildUserCategory(input: UserCategoryInput): CategoryBundle {
       version: input.version ?? 1,
       skeleton,
       metaPrompt,
-      paramsSchema: null,
+      paramsSchema,
       isBuiltin: false,
     },
   };

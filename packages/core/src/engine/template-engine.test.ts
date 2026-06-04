@@ -48,6 +48,14 @@ describe('buildBasePrompt', () => {
   it("injecte l'intention normalisée dans le squelette", () => {
     expect(buildBasePrompt(template, '  faire X  ')).toContain('# Intention\nfaire X');
   });
+
+  it('injecte les variables et garde intent prioritaire', () => {
+    const tpl = { ...template, skeleton: 'Ton: {{ton}}\n{{intent}}' };
+    const out = buildBasePrompt(tpl, 'faire X', { ton: 'direct', intent: 'IGNORÉ' });
+    expect(out).toContain('Ton: direct');
+    expect(out).toContain('faire X');
+    expect(out).not.toContain('IGNORÉ');
+  });
 });
 
 describe('buildMetaPrompt', () => {

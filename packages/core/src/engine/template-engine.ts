@@ -22,15 +22,24 @@ export function normalizeIntent(intent: string): string {
  * Construit le prompt déterministe (template paramétré seul). C'est aussi le FALLBACK
  * retourné si l'appel LLM échoue — l'app reste utile hors-ligne / sans quota (PRD §8.4).
  */
-export function buildBasePrompt(template: Template, intent: string): string {
-  return renderSkeleton(template.skeleton, { intent: normalizeIntent(intent) });
+export function buildBasePrompt(
+  template: Template,
+  intent: string,
+  vars: Readonly<Record<string, string>> = {},
+): string {
+  // `intent` est prioritaire sur une éventuelle variable du même nom.
+  return renderSkeleton(template.skeleton, { ...vars, intent: normalizeIntent(intent) });
 }
 
 /**
  * Construit le méta-prompt envoyé au LLM lors de l'OptimizationPass : l'instruction
- * d'optimisation de la catégorie + le template de référence paramétré.
+ * d'optimisation de la catégorie + le template de référence paramétré (variables incluses).
  */
-export function buildMetaPrompt(template: Template, intent: string): string {
-  const reference = buildBasePrompt(template, intent);
+export function buildMetaPrompt(
+  template: Template,
+  intent: string,
+  vars: Readonly<Record<string, string>> = {},
+): string {
+  const reference = buildBasePrompt(template, intent, vars);
   return `${template.metaPrompt}\n\n--- TEMPLATE DE RÉFÉRENCE ---\n${reference}`;
 }

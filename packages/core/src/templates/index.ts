@@ -7,3 +7,4 @@ export {
   UserCategoryError,
 } from './user-category.js';
 export type { UserCategoryInput, UserCategoryErrorCode } from './user-category.js';
+export { defaultParamValues, missingRequiredParams } from './params.js';

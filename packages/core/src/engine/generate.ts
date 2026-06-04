@@ -7,6 +7,8 @@ export interface HybridGenerateParams {
   readonly intent: string;
   readonly adapter: ProviderAdapter;
   readonly options: GenerateOptions;
+  /** Valeurs des variables du template (F-C3), injectées dans le squelette via `{{key}}`. */
+  readonly vars?: Readonly<Record<string, string>>;
 }
 
 export interface HybridResult {
@@ -20,7 +22,7 @@ export interface HybridResult {
  * Émet les chunks du prompt optimisé au fil de l'eau (NF-P2). Lève si l'appel échoue.
  */
 export async function* optimizeStream(params: HybridGenerateParams): AsyncIterable<string> {
-  const metaPrompt = buildMetaPrompt(params.template, params.intent);
+  const metaPrompt = buildMetaPrompt(params.template, params.intent, params.vars ?? {});
   yield* params.adapter.generate(metaPrompt, params.options);
 }
 
@@ -30,7 +32,7 @@ export async function* optimizeStream(params: HybridGenerateParams): AsyncIterab
  * Ne lève jamais pour une erreur de provider — l'app reste utilisable (PRD §8.4).
  */
 export async function generateHybrid(params: HybridGenerateParams): Promise<HybridResult> {
-  const base = buildBasePrompt(params.template, params.intent);
+  const base = buildBasePrompt(params.template, params.intent, params.vars ?? {});
   try {
     let optimized = '';
     for await (const chunk of optimizeStream(params)) {

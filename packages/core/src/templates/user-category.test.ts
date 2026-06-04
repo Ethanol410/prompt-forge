@@ -50,6 +50,45 @@ describe('buildUserCategory', () => {
   it('utilise la version fournie', () => {
     expect(buildUserCategory({ ...valid, version: 3 }).template.version).toBe(3);
   });
+
+  it('construit un paramsSchema à partir des variables', () => {
+    const bundle = buildUserCategory({
+      ...valid,
+      params: [{ key: 'ton', label: 'Ton', type: 'text', required: true, defaultValue: 'formel' }],
+    });
+    expect(bundle.template.paramsSchema?.params[0]).toMatchObject({ key: 'ton', required: true });
+  });
+
+  it('paramsSchema null si aucune variable', () => {
+    expect(buildUserCategory(valid).template.paramsSchema).toBeNull();
+  });
+
+  it('rejette une clé de variable invalide ou réservée', () => {
+    expect(() =>
+      buildUserCategory({
+        ...valid,
+        params: [{ key: 'intent', label: 'x', type: 'text', required: false, defaultValue: '' }],
+      }),
+    ).toThrow(UserCategoryError);
+    expect(() =>
+      buildUserCategory({
+        ...valid,
+        params: [{ key: '2bad', label: 'x', type: 'text', required: false, defaultValue: '' }],
+      }),
+    ).toThrow(UserCategoryError);
+  });
+
+  it('rejette les clés de variables en double', () => {
+    expect(() =>
+      buildUserCategory({
+        ...valid,
+        params: [
+          { key: 'a', label: 'A', type: 'text', required: false, defaultValue: '' },
+          { key: 'a', label: 'A2', type: 'text', required: false, defaultValue: '' },
+        ],
+      }),
+    ).toThrow(UserCategoryError);
+  });
 });
 
 describe('allCategories / findCategoryById', () => {
