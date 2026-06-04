@@ -133,6 +133,7 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
   const [versions, setVersions] = useState<readonly PromptVersion[]>([]);
   const [draft, setDraft] = useState<{ readonly label: string; readonly text: string } | null>(null);
   const [genStatus, setGenStatus] = useState<GenStatus>('idle');
+  const [threadIntent, setThreadIntent] = useState<string | null>(null);
   const [history, setHistory] = useState<readonly Generation[]>([]);
   const [toasts, setToasts] = useState<readonly { readonly id: number; readonly message: string }[]>([]);
   const toastSeq = useRef(0);
@@ -343,6 +344,7 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
       }
     }
 
+    setThreadIntent(intentTrim);
     setBusy(true);
     setGenStatus('thinking');
     const base = buildBasePrompt(sys.template, intentTrim, paramValues);
@@ -525,63 +527,464 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
     setVersions([]);
     setDraft(null);
     setGenStatus('idle');
+    setThreadIntent(null);
     setError(null);
     setKeySaved(false);
   }
 
+  /** Démarre une nouvelle « conversation » : vide le fil courant (sans toucher à l'historique). */
+  function handleNewThread(): void {
+    setVersions([]);
+    setDraft(null);
+    setGenStatus('idle');
+    setThreadIntent(null);
+    setError(null);
+    setIntent('');
+  }
+
+  /** Recharge une génération de l'historique dans le fil courant (consultation/réutilisation). */
+  function handleLoadHistory(g: Generation): void {
+    setVersions([
+      {
+        id: g.id,
+        label: 'Depuis l’historique',
+        prompt: g.outputPrompt,
+        tokens: g.tokenEstimate ?? estimateTokens(g.outputPrompt),
+        fallback: false,
+        providerLabel: g.providerUsed,
+        model: g.modelName,
+        rating: g.rating,
+      },
+    ]);
+    setDraft(null);
+    setGenStatus('idle');
+    setThreadIntent(g.userIntent);
+    setError(null);
+  }
+
+  /** Supprime une seule entrée de l'historique. */
+  async function handleDeleteHistory(id: string): Promise<void> {
+    await deps.historyStore.delete(id);
+    await refreshHistory();
+  }
+
+  const templateParams = selectedCategory.template.paramsSchema?.params ?? [];
+
   return (
-    <div className="relative mx-auto max-w-3xl p-6">
+    <div className="flex h-screen flex-col bg-paper text-ink md:flex-row">
       <HandDrawnDefs />
-      <Doodle name="star" className="absolute right-3 top-4 h-9 w-9 opacity-70" />
 
-      <header className="mb-8">
-        <h1 ref={titleRef} className="inline-block font-hand text-5xl font-bold leading-none text-ink">
-          PromptForge{' '}
-          {platformLabel && <span className="text-2xl font-normal text-ink/50">· {platformLabel}</span>}
-        </h1>
-        <p className="mt-2 font-body text-sm text-ink/70">
-          Génère le meilleur prompt pour ta tâche — avec ta propre clé ou un modèle local.
-        </p>
-      </header>
-
-      <section className="mb-5">
-        <div className="mb-1 flex items-center justify-between">
-          <label className="block font-hand text-xl">Catégorie</label>
-          <button className="font-hand text-base text-accent" onClick={openNewTemplate}>
-            + Nouveau template
-          </button>
-        </div>
-        <div ref={categoryRef} className="block w-full">
-          <select
-            className="w-full rounded-lg border-2 border-ink bg-paper p-2 font-body"
-            value={categoryId}
-            onChange={(e) => setCategoryId(e.target.value)}
-          >
-            {categories.map(({ category }) => (
-              <option key={category.id} value={category.id}>
-                {category.name}
-                {category.owner === 'user' ? ' (perso)' : ''}
-              </option>
-            ))}
-          </select>
+      {/* Barre latérale : titre, actions, historique */}
+      <aside className="flex w-full shrink-0 flex-col gap-3 border-b-2 border-ink/15 p-4 md:max-h-screen md:w-72 md:border-b-0 md:border-r-2">
+        <div>
+          <h1 ref={titleRef} className="inline-block font-hand text-3xl font-bold leading-none text-ink">
+            PromptForge
+          </h1>
+          {platformLabel && (
+            <span className="ml-1 font-hand text-sm text-ink/50">· {platformLabel}</span>
+          )}
         </div>
 
-        {selectedCategory.category.owner === 'user' && !editorOpen && (
-          <div className="mt-1 flex gap-4 font-hand text-base">
-            <button className="text-accent2" onClick={() => openEditTemplate(selectedCategory)}>
-              Éditer
+        <button
+          className="rounded-lg border-2 border-ink bg-accent px-3 py-2 font-hand text-lg text-ink shadow-sketch-sm"
+          onClick={handleNewThread}
+        >
+          + Nouvelle conversation
+        </button>
+        <button
+          className="rounded-lg border-2 border-ink bg-paper px-3 py-1 font-hand text-base shadow-sketch-sm"
+          onClick={openNewTemplate}
+        >
+          + Nouveau template
+        </button>
+
+        <div className="mt-2 flex items-center justify-between">
+          <h2 className="font-hand text-lg">Historique ({history.length})</h2>
+          {history.length > 0 && (
+            <button className="font-hand text-xs text-danger" onClick={() => void handleClearAll()}>
+              Tout effacer
             </button>
+          )}
+        </div>
+        <ul className="flex-1 space-y-1 overflow-y-auto font-body text-xs text-ink/70">
+          {history.length === 0 && <li className="text-ink/40">Aucune génération pour l'instant.</li>}
+          {history.slice(0, 40).map((g) => (
+            <li key={g.id} className="flex items-center gap-1">
+              <button
+                className="block min-w-0 flex-1 truncate rounded px-1 py-1 text-left hover:bg-ink/5"
+                onClick={() => handleLoadHistory(g)}
+                title={g.userIntent}
+              >
+                <span className="text-ink/40">{g.createdAt.slice(0, 10)}</span> · {g.userIntent}
+              </button>
+              <button
+                className="shrink-0 rounded px-1 text-ink/40 hover:text-danger"
+                onClick={() => void handleDeleteHistory(g.id)}
+                aria-label="supprimer cette entrée"
+                title="Supprimer cette entrée"
+              >
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+      </aside>
+
+      {/* Zone principale */}
+      <main className="relative flex min-w-0 flex-1 flex-col">
+        <Doodle name="star" className="pointer-events-none absolute right-3 top-3 h-7 w-7 opacity-60" />
+
+        {/* Bandeau : catégorie + provider + réglages */}
+        <div className="shrink-0 border-b-2 border-ink/15 p-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block font-hand text-base">Catégorie</label>
+              <div className="flex items-center gap-2">
+                <div ref={categoryRef} className="min-w-0 flex-1">
+                  <select
+                    className="w-full rounded-lg border-2 border-ink bg-paper p-2 font-body"
+                    value={categoryId}
+                    onChange={(e) => setCategoryId(e.target.value)}
+                  >
+                    {categories.map(({ category }) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                        {category.owner === 'user' ? ' (perso)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {selectedCategory.category.owner === 'user' && (
+                  <>
+                    <button
+                      className="shrink-0 font-hand text-sm text-accent2"
+                      onClick={() => openEditTemplate(selectedCategory)}
+                    >
+                      Éditer
+                    </button>
+                    <button
+                      className="shrink-0 font-hand text-sm text-danger"
+                      onClick={() => void handleDeleteTemplate(selectedCategory.category.id)}
+                    >
+                      Suppr.
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block font-hand text-base">Provider</label>
+              <select
+                className="w-full rounded-lg border-2 border-ink bg-paper p-2 font-body"
+                value={providerType}
+                onChange={(e) => setProviderType(e.target.value as ProviderType)}
+              >
+                {providers.map((p) => (
+                  <option key={p.type} value={p.type} disabled={p.disabled}>
+                    {p.label}
+                    {p.disabled && p.disabledNote ? ` — ${p.disabledNote}` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <input
+              className="w-40 rounded-lg border-2 border-ink bg-paper p-1.5 font-body text-sm"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              placeholder="modèle"
+              aria-label="modèle"
+            />
+            {provider.isLocal && (
+              <input
+                className="w-52 rounded-lg border-2 border-ink bg-paper p-1.5 font-body text-sm"
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder="base URL"
+                aria-label="base URL"
+              />
+            )}
+            {provider.needsKey && (
+              <>
+                <input
+                  className="min-w-40 flex-1 rounded-lg border-2 border-ink bg-paper p-1.5 font-body text-sm"
+                  type="password"
+                  value={keyInput}
+                  onChange={(e) => setKeyInput(e.target.value)}
+                  placeholder={keySaved ? 'clé enregistrée (chiffrée) — saisir pour remplacer' : 'clé API'}
+                  aria-label="clé API"
+                />
+                <button
+                  className="shrink-0 rounded-lg border-2 border-ink bg-ink px-3 py-1.5 font-hand text-sm text-paper shadow-sketch-sm disabled:opacity-50"
+                  onClick={() => void handleSaveKey()}
+                  disabled={!keyInput.trim()}
+                >
+                  {keySaved ? 'Remplacer' : 'Enregistrer'}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Fil de génération */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {!threadIntent && versions.length === 0 && !draft && !abMode && (
+            <p className="mt-16 text-center font-hand text-2xl text-ink/40">
+              Décris ton besoin en bas pour forger un prompt ✶
+            </p>
+          )}
+
+          {threadIntent && (
+            <div className="mb-4 flex justify-end">
+              <div className="card-sketch max-w-[80%] px-4 py-2 font-body text-sm">{threadIntent}</div>
+            </div>
+          )}
+
+          {error && (
+            <p className="mb-4 rounded-lg border-2 border-danger bg-paper p-3 font-body text-sm text-danger">
+              {error}
+            </p>
+          )}
+
+          {genStatus !== 'idle' && (
+            <div className="mb-4 flex items-center gap-3 font-hand text-lg text-ink/80">
+              {(genStatus === 'thinking' || genStatus === 'writing') && (
+                <span
+                  className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-ink border-t-transparent"
+                  aria-hidden="true"
+                />
+              )}
+              <span aria-live="polite">{STATUS_LABEL[genStatus]}</span>
+            </div>
+          )}
+
+          {abMode && (abRaw !== '' || abOptimized !== '') && (
+            <section className="mb-6 grid gap-4 md:grid-cols-2">
+              <SketchBox className="p-4" color="#3b82a0">
+                <h3 className="mb-2 font-hand text-xl">Brut (template)</h3>
+                <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-lg border-2 border-ink/20 bg-paper/60 p-3 font-mono text-xs text-ink">
+                  {abRaw}
+                </pre>
+                <button
+                  className="mt-2 w-full rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm"
+                  onClick={() => void handleAbChoose('raw')}
+                >
+                  Choisir le brut 👍
+                </button>
+              </SketchBox>
+              <SketchBox className="p-4" color="#e8743b">
+                <h3 className="mb-2 font-hand text-xl">Optimisé (LLM)</h3>
+                <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-lg border-2 border-ink/20 bg-paper/60 p-3 font-mono text-xs text-ink">
+                  {abOptimized || (busy ? '…' : '')}
+                </pre>
+                <button
+                  className="mt-2 w-full rounded-lg border-2 border-ink bg-accent px-2 py-1 font-hand text-base text-ink shadow-sketch-sm disabled:opacity-40"
+                  onClick={() => void handleAbChoose('optimized')}
+                  disabled={!abOptimized}
+                >
+                  Choisir l'optimisé 👍
+                </button>
+              </SketchBox>
+            </section>
+          )}
+
+          {!abMode &&
+            versions.map((v, index) => {
+              const quality = scorePrompt(v.prompt);
+              const qualityColor =
+                quality.score >= 80
+                  ? 'text-success'
+                  : quality.score >= 50
+                    ? 'text-accent'
+                    : 'text-danger';
+              const failed = quality.checks.filter((c) => !c.passed);
+              return (
+                <SketchBox key={v.id} className="mb-4 p-4">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-hand text-xl">
+                      {v.label}
+                      {v.fallback && (
+                        <em className="font-body text-sm text-accent"> (fallback déterministe)</em>
+                      )}
+                      {index > 0 && (
+                        <span className="font-body text-xs text-ink/40"> · version {index + 1}</span>
+                      )}
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm"
+                        onClick={() => void handleCopy(v.prompt)}
+                        title="Copie le prompt brut — format prêt pour Claude Code"
+                      >
+                        Copier
+                      </button>
+                      <button
+                        className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm"
+                        onClick={() => handleExport('markdown', v.prompt)}
+                        title="Télécharger en Markdown"
+                      >
+                        .md
+                      </button>
+                      <button
+                        className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm"
+                        onClick={() => handleExport('text', v.prompt)}
+                        title="Télécharger en texte brut"
+                      >
+                        .txt
+                      </button>
+                      <button
+                        className={`rounded-lg border-2 border-ink px-2 py-1 font-hand text-base shadow-sketch-sm ${
+                          v.rating === 'up' ? 'bg-success text-paper' : 'bg-paper'
+                        }`}
+                        onClick={() => void handleRate(v.id, 'up')}
+                        aria-label="pouce en haut"
+                        aria-pressed={v.rating === 'up'}
+                      >
+                        👍
+                      </button>
+                      <button
+                        className={`rounded-lg border-2 border-ink px-2 py-1 font-hand text-base shadow-sketch-sm ${
+                          v.rating === 'down' ? 'bg-danger text-paper' : 'bg-paper'
+                        }`}
+                        onClick={() => void handleRate(v.id, 'down')}
+                        aria-label="pouce en bas"
+                        aria-pressed={v.rating === 'down'}
+                      >
+                        👎
+                      </button>
+                    </div>
+                  </div>
+                  <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border-2 border-ink/20 bg-paper/60 p-3 font-mono text-sm text-ink">
+                    {v.prompt}
+                  </pre>
+                  <p className="mt-2 font-body text-xs text-ink/60">
+                    Généré par <strong>{v.providerLabel}</strong>
+                    {v.model ? ` · ${v.model}` : ''} · ~{v.tokens} tokens (estimation)
+                  </p>
+                  <p className={`mt-1 font-hand text-base ${qualityColor}`}>
+                    Qualité : {quality.score}/100
+                    {failed.length > 0 && (
+                      <span className="font-body text-xs text-ink/60">
+                        {' '}
+                        — à améliorer : {failed.map((c) => c.hint).join(' ')}
+                      </span>
+                    )}
+                  </p>
+                </SketchBox>
+              );
+            })}
+
+          {!abMode && draft && (
+            <SketchBox className="mb-4 p-4" color="#3b82a0">
+              <div className="mb-2 font-hand text-xl">{draft.label}</div>
+              <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border-2 border-ink/20 bg-paper/60 p-3 font-mono text-sm text-ink">
+                {draft.text || '…'}
+              </pre>
+            </SketchBox>
+          )}
+
+          {!abMode && versions.length > 0 && !draft && (
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <span className="self-center font-hand text-base text-ink/70">
+                Affiner (ajoute une version) :
+              </span>
+              <button
+                className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm disabled:opacity-40"
+                onClick={() => void handleRefine(REFINEMENTS.shorter, 'Plus court')}
+                disabled={busy}
+              >
+                Plus court
+              </button>
+              <button
+                className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm disabled:opacity-40"
+                onClick={() => void handleRefine(REFINEMENTS.more_technical, 'Plus technique')}
+                disabled={busy}
+              >
+                Plus technique
+              </button>
+              <button
+                className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm disabled:opacity-40"
+                onClick={() => void handleRefine(REFINEMENTS.more_formal, 'Plus formel')}
+                disabled={busy}
+              >
+                Plus formel
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Composer */}
+        <div className="shrink-0 border-t-2 border-ink/15 p-4">
+          {templateParams.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-3">
+              {templateParams.map((p) => (
+                <div key={p.key} className="flex items-center gap-1">
+                  <span className="font-body text-xs text-ink/60">
+                    {p.label}
+                    {p.required ? ' *' : ''}
+                  </span>
+                  {p.type === 'select' && p.options && p.options.length > 0 ? (
+                    <select
+                      className="rounded border-2 border-ink bg-paper p-1 font-body text-xs"
+                      value={paramValues[p.key] ?? ''}
+                      onChange={(e) => setParamValues((prev) => ({ ...prev, [p.key]: e.target.value }))}
+                      aria-label={p.label}
+                    >
+                      {p.options.map((o) => (
+                        <option key={o} value={o}>
+                          {o}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      className="w-32 rounded border-2 border-ink bg-paper p-1 font-body text-xs"
+                      value={paramValues[p.key] ?? ''}
+                      onChange={(e) => setParamValues((prev) => ({ ...prev, [p.key]: e.target.value }))}
+                      aria-label={p.label}
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex items-end gap-2">
+            <textarea
+              className="h-20 flex-1 rounded-lg border-2 border-ink bg-paper p-2 font-body"
+              value={intent}
+              maxLength={8000}
+              onChange={(e) => setIntent(e.target.value)}
+              placeholder="Décris ton besoin…"
+              aria-label="Décris ton besoin"
+            />
             <button
-              className="text-danger"
-              onClick={() => void handleDeleteTemplate(selectedCategory.category.id)}
+              className="wonk shrink-0 rounded-lg border-2 border-ink bg-accent px-4 py-2 font-hand text-xl text-ink shadow-sketch transition-transform hover:-translate-y-0.5 disabled:opacity-50"
+              onClick={() => void handleGenerate()}
+              disabled={busy || !intent.trim()}
             >
-              Supprimer
+              {busy ? '…' : 'Générer ✶'}
             </button>
           </div>
-        )}
+          <label className="mt-2 flex items-center gap-2 font-hand text-sm text-ink/70">
+            <input type="checkbox" checked={abMode} onChange={(e) => setAbMode(e.target.checked)} />
+            Comparer brut ↔ optimisé
+          </label>
+        </div>
+      </main>
 
-        {editorOpen && (
-          <div className="card-sketch mt-4 p-4">
+      {/* Modale : éditeur de template */}
+      {editorOpen && (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center bg-ink/30 p-4"
+          onClick={() => setEditorOpen(false)}
+        >
+          <div
+            className="card-sketch max-h-[90vh] w-full max-w-2xl overflow-y-auto p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h3 className="mb-2 font-hand text-xl">
               {editingId ? 'Éditer le template' : 'Nouveau template'}
             </h3>
@@ -696,322 +1099,10 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
               </button>
             </div>
           </div>
-        )}
-      </section>
-
-      <section className="mb-5">
-        <label className="mb-1 block font-hand text-xl">Provider</label>
-        <select
-          className="w-full rounded-lg border-2 border-ink bg-paper p-2 font-body"
-          value={providerType}
-          onChange={(e) => setProviderType(e.target.value as ProviderType)}
-        >
-          {providers.map((p) => (
-            <option key={p.type} value={p.type} disabled={p.disabled}>
-              {p.label}
-              {p.disabled && p.disabledNote ? ` — ${p.disabledNote}` : ''}
-            </option>
-          ))}
-        </select>
-
-        <div className="mt-2 grid grid-cols-2 gap-2">
-          <input
-            className="rounded-lg border-2 border-ink bg-paper p-2 font-body"
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            placeholder="modèle"
-            aria-label="modèle"
-          />
-          {provider.isLocal && (
-            <input
-              className="rounded-lg border-2 border-ink bg-paper p-2 font-body"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="base URL"
-              aria-label="base URL"
-            />
-          )}
-        </div>
-
-        {provider.needsKey && (
-          <div className="mt-2 flex gap-2">
-            <input
-              className="flex-1 rounded-lg border-2 border-ink bg-paper p-2 font-body"
-              type="password"
-              value={keyInput}
-              onChange={(e) => setKeyInput(e.target.value)}
-              placeholder={keySaved ? 'clé enregistrée (chiffrée) — saisir pour remplacer' : 'clé API'}
-              aria-label="clé API"
-            />
-            <button
-              className="rounded-lg border-2 border-ink bg-ink px-3 py-2 font-hand text-base text-paper shadow-sketch-sm disabled:opacity-50"
-              onClick={() => void handleSaveKey()}
-              disabled={!keyInput.trim()}
-            >
-              {keySaved ? 'Remplacer' : 'Enregistrer'}
-            </button>
-          </div>
-        )}
-      </section>
-
-      <section className="mb-5">
-        <label className="mb-1 block font-hand text-xl">Décris ton besoin</label>
-        <textarea
-          className="h-32 w-full rounded-lg border-2 border-ink bg-paper p-2 font-body"
-          value={intent}
-          maxLength={8000}
-          onChange={(e) => setIntent(e.target.value)}
-          placeholder="Ex. : un prompt pour générer une API REST en Node avec tests…"
-        />
-      </section>
-
-      {selectedCategory.template.paramsSchema &&
-        selectedCategory.template.paramsSchema.params.length > 0 && (
-          <section className="mb-5">
-            <label className="mb-1 block font-hand text-xl">Variables</label>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {selectedCategory.template.paramsSchema.params.map((p) => (
-                <div key={p.key}>
-                  <label className="mb-1 block font-body text-xs text-ink/70">
-                    {p.label}
-                    {p.required ? ' *' : ''}
-                  </label>
-                  {p.type === 'select' && p.options && p.options.length > 0 ? (
-                    <select
-                      className="w-full rounded-lg border-2 border-ink bg-paper p-2 font-body"
-                      value={paramValues[p.key] ?? ''}
-                      onChange={(e) =>
-                        setParamValues((prev) => ({ ...prev, [p.key]: e.target.value }))
-                      }
-                      aria-label={p.label}
-                    >
-                      {p.options.map((o) => (
-                        <option key={o} value={o}>
-                          {o}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      className="w-full rounded-lg border-2 border-ink bg-paper p-2 font-body"
-                      value={paramValues[p.key] ?? ''}
-                      onChange={(e) =>
-                        setParamValues((prev) => ({ ...prev, [p.key]: e.target.value }))
-                      }
-                      aria-label={p.label}
-                    />
-                  )}
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-      <div className="mb-5 flex flex-wrap items-center gap-4">
-        <button
-          className="wonk rounded-lg border-2 border-ink bg-accent px-5 py-2 font-hand text-2xl text-ink shadow-sketch transition-transform hover:-translate-y-0.5 disabled:opacity-50"
-          onClick={() => void handleGenerate()}
-          disabled={busy || !intent.trim()}
-        >
-          {busy ? 'Génération…' : 'Générer le prompt ✶'}
-        </button>
-        <label className="flex items-center gap-2 font-hand text-base">
-          <input
-            type="checkbox"
-            checked={abMode}
-            onChange={(e) => setAbMode(e.target.checked)}
-          />
-          Comparer brut ↔ optimisé
-        </label>
-      </div>
-
-      {error && (
-        <p className="mb-4 rounded-lg border-2 border-danger bg-paper p-3 font-body text-sm text-danger">
-          {error}
-        </p>
-      )}
-
-      {genStatus !== 'idle' && (
-        <div className="mb-4 flex items-center gap-3 font-hand text-lg text-ink/80">
-          {(genStatus === 'thinking' || genStatus === 'writing') && (
-            <span
-              className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-ink border-t-transparent"
-              aria-hidden="true"
-            />
-          )}
-          <span aria-live="polite">{STATUS_LABEL[genStatus]}</span>
         </div>
       )}
 
-      {abMode && (abRaw !== '' || abOptimized !== '') && (
-        <section className="mb-6 grid gap-4 md:grid-cols-2">
-          <SketchBox className="p-4" color="#3b82a0">
-            <h3 className="mb-2 font-hand text-xl">Brut (template)</h3>
-            <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-lg border-2 border-ink/20 bg-paper/60 p-3 font-mono text-xs text-ink">
-              {abRaw}
-            </pre>
-            <button
-              className="mt-2 w-full rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm"
-              onClick={() => void handleAbChoose('raw')}
-            >
-              Choisir le brut 👍
-            </button>
-          </SketchBox>
-          <SketchBox className="p-4" color="#e8743b">
-            <h3 className="mb-2 font-hand text-xl">Optimisé (LLM)</h3>
-            <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-lg border-2 border-ink/20 bg-paper/60 p-3 font-mono text-xs text-ink">
-              {abOptimized || (busy ? '…' : '')}
-            </pre>
-            <button
-              className="mt-2 w-full rounded-lg border-2 border-ink bg-accent px-2 py-1 font-hand text-base text-ink shadow-sketch-sm disabled:opacity-40"
-              onClick={() => void handleAbChoose('optimized')}
-              disabled={!abOptimized}
-            >
-              Choisir l'optimisé 👍
-            </button>
-          </SketchBox>
-        </section>
-      )}
-
-      {!abMode &&
-        versions.map((v, index) => {
-          const quality = scorePrompt(v.prompt);
-          const qualityColor =
-            quality.score >= 80 ? 'text-success' : quality.score >= 50 ? 'text-accent' : 'text-danger';
-          const failed = quality.checks.filter((c) => !c.passed);
-          return (
-          <SketchBox key={v.id} className="mb-4 p-4">
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <span className="font-hand text-xl">
-                {v.label}
-                {v.fallback && (
-                  <em className="font-body text-sm text-accent"> (fallback déterministe)</em>
-                )}
-                {index > 0 && (
-                  <span className="font-body text-xs text-ink/40"> · version {index + 1}</span>
-                )}
-              </span>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm"
-                  onClick={() => void handleCopy(v.prompt)}
-                  title="Copie le prompt brut — format prêt pour Claude Code"
-                >
-                  Copier
-                </button>
-                <button
-                  className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm"
-                  onClick={() => handleExport('markdown', v.prompt)}
-                  title="Télécharger en Markdown"
-                >
-                  .md
-                </button>
-                <button
-                  className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm"
-                  onClick={() => handleExport('text', v.prompt)}
-                  title="Télécharger en texte brut"
-                >
-                  .txt
-                </button>
-                <button
-                  className={`rounded-lg border-2 border-ink px-2 py-1 font-hand text-base shadow-sketch-sm ${
-                    v.rating === 'up' ? 'bg-success text-paper' : 'bg-paper'
-                  }`}
-                  onClick={() => void handleRate(v.id, 'up')}
-                  aria-label="pouce en haut"
-                  aria-pressed={v.rating === 'up'}
-                >
-                  👍
-                </button>
-                <button
-                  className={`rounded-lg border-2 border-ink px-2 py-1 font-hand text-base shadow-sketch-sm ${
-                    v.rating === 'down' ? 'bg-danger text-paper' : 'bg-paper'
-                  }`}
-                  onClick={() => void handleRate(v.id, 'down')}
-                  aria-label="pouce en bas"
-                  aria-pressed={v.rating === 'down'}
-                >
-                  👎
-                </button>
-              </div>
-            </div>
-            <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border-2 border-ink/20 bg-paper/60 p-3 font-mono text-sm text-ink">
-              {v.prompt}
-            </pre>
-            <p className="mt-2 font-body text-xs text-ink/60">
-              Généré par <strong>{v.providerLabel}</strong>
-              {v.model ? ` · ${v.model}` : ''} · ~{v.tokens} tokens (estimation)
-            </p>
-            <p className={`mt-1 font-hand text-base ${qualityColor}`}>
-              Qualité : {quality.score}/100
-              {failed.length > 0 && (
-                <span className="font-body text-xs text-ink/60"> — à améliorer : {failed.map((c) => c.hint).join(' ')}</span>
-              )}
-            </p>
-          </SketchBox>
-          );
-        })}
-
-      {!abMode && draft && (
-        <SketchBox className="mb-4 p-4" color="#3b82a0">
-          <div className="mb-2 font-hand text-xl">{draft.label}</div>
-          <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border-2 border-ink/20 bg-paper/60 p-3 font-mono text-sm text-ink">
-            {draft.text || '…'}
-          </pre>
-        </SketchBox>
-      )}
-
-      {!abMode && versions.length > 0 && !draft && (
-        <div className="mb-6 flex flex-wrap items-center gap-2">
-          <span className="self-center font-hand text-base text-ink/70">
-            Affiner (ajoute une version) :
-          </span>
-          <button
-            className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm disabled:opacity-40"
-            onClick={() => void handleRefine(REFINEMENTS.shorter, 'Plus court')}
-            disabled={busy}
-          >
-            Plus court
-          </button>
-          <button
-            className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm disabled:opacity-40"
-            onClick={() => void handleRefine(REFINEMENTS.more_technical, 'Plus technique')}
-            disabled={busy}
-          >
-            Plus technique
-          </button>
-          <button
-            className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm disabled:opacity-40"
-            onClick={() => void handleRefine(REFINEMENTS.more_formal, 'Plus formel')}
-            disabled={busy}
-          >
-            Plus formel
-          </button>
-        </div>
-      )}
-
-      <section>
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="font-hand text-2xl">Historique ({history.length})</h2>
-          {history.length > 0 && (
-            <button
-              className="rounded-lg border-2 border-danger bg-paper px-2 py-1 font-hand text-base text-danger shadow-sketch-sm"
-              onClick={() => void handleClearAll()}
-            >
-              Tout effacer
-            </button>
-          )}
-        </div>
-        <ul className="space-y-1 font-body text-sm text-ink/70">
-          {history.slice(0, 10).map((g) => (
-            <li key={g.id} className="truncate">
-              <span className="text-ink/40">{g.createdAt.slice(0, 10)}</span> · {g.providerUsed} ·{' '}
-              {g.userIntent}
-            </li>
-          ))}
-        </ul>
-      </section>
-
+      {/* Toasts */}
       <div
         className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex flex-col items-center gap-2"
         aria-live="polite"
