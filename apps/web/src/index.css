@@ -1,0 +1,6 @@
+@import 'tailwindcss';
+@import '@promptforge/ui/styles.css';
+
+/* Le composant partagé vit dans packages/ui (symlink node_modules ignoré par Tailwind v4) :
+   on déclare explicitement sa source à scanner. */
+@source '../../../packages/ui/src';

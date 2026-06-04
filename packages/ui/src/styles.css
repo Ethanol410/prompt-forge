@@ -1,0 +1,78 @@
+/* Polices auto-hébergées (offline, CSP font-src 'self' inchangée).
+   Manuscrite = Caveat ; corps lisible = Nunito ; code = JetBrains Mono. */
+@import '@fontsource/caveat/400.css';
+@import '@fontsource/caveat/600.css';
+@import '@fontsource/caveat/700.css';
+@import '@fontsource/nunito/400.css';
+@import '@fontsource/nunito/600.css';
+@import '@fontsource/nunito/700.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+
+/* Extension de thème Tailwind v4 (STYLE_hand-drawn.md §3). */
+@theme {
+  --font-hand: 'Caveat', cursive;
+  --font-body: 'Nunito', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --color-paper: #fdf6e3;
+  --color-ink: #2b2b2b;
+  --color-accent: #e8743b;
+  --color-accent2: #3b82a0;
+  --color-highlight: #fce38a;
+  --color-success: #6fae5b;
+  --color-danger: #d1495b;
+
+  --shadow-sketch: 4px 4px 0 0 #2b2b2b;
+  --shadow-sketch-sm: 2px 2px 0 0 #2b2b2b;
+
+  --radius-blob: 255px 15px 225px 15px / 15px 225px 15px 255px;
+}
+
+/* Base : papier + encre + corps lisible. Texture papier très subtile. */
+@layer base {
+  body {
+    background-color: var(--color-paper);
+    background-image: radial-gradient(rgba(43, 43, 43, 0.04) 1px, transparent 1px);
+    background-size: 22px 22px;
+    color: var(--color-ink);
+    font-family: var(--font-body);
+  }
+}
+
+/* Recettes « parfaitement imparfait » (§4). */
+.card-sketch {
+  background-color: var(--color-paper);
+  border: 2px solid var(--color-ink);
+  border-radius: var(--radius-blob);
+  box-shadow: var(--shadow-sketch);
+}
+.wonk {
+  transform: rotate(-1.5deg);
+}
+.wonk-r {
+  transform: rotate(1.2deg);
+}
+.marker {
+  background: linear-gradient(120deg, transparent 0, var(--color-highlight) 0) no-repeat;
+  background-size: 100% 0.5em;
+  background-position: 0 88%;
+}
+.wobble {
+  filter: url(#hand-drawn-wobble);
+}
+
+/* Accessibilité : pas de décalage/anim si l'utilisateur le demande (§8). */
+@media (prefers-reduced-motion: reduce) {
+  .wonk,
+  .wonk-r {
+    transform: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

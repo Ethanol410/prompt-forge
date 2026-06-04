@@ -1,0 +1,35 @@
+# Dépendances
+node_modules/
+
+# Builds
+dist/
+*.tsbuildinfo
+coverage/
+
+# Tauri / Rust
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+
+# Secrets & env — NE JAMAIS committer (règle sécurité non négociable)
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Artefacts de test e2e / navigateur
+.playwright-mcp/
+*-verification.png
+
+# Éditeurs / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.log
+
+
+CLAUDE.md
+*.md
+
+

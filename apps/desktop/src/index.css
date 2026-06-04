@@ -1,0 +1,5 @@
+@import 'tailwindcss';
+@import '@promptforge/ui/styles.css';
+
+/* Idem web : Tailwind doit scanner le composant partagé packages/ui (symlink ignoré sinon). */
+@source '../../../packages/ui/src';
