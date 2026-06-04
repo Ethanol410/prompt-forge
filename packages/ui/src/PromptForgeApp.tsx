@@ -18,10 +18,14 @@ import {
   buildExport,
   estimateTokens,
   describeProviderError,
+  defaultParamValues,
+  missingRequiredParams,
+  scorePrompt,
   type ExportFormat,
   type ProviderType,
   type Generation,
   type CategoryBundle,
+  type TemplateParam,
   type SecretStore,
   type HttpClient,
   type HistoryStore,
@@ -100,12 +104,18 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
   );
   const [intent, setIntent] = useState('');
 
-  // Éditeur de templates personnalisés (F-S1).
+  // Valeurs des variables du template sélectionné (F-C3).
+  const [paramValues, setParamValues] = useState<Record<string, string>>(() =>
+    defaultParamValues(SYSTEM_CATEGORIES[0]!.template.paramsSchema),
+  );
+
+  // Éditeur de templates personnalisés (F-S1) + variables (F-C3).
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formName, setFormName] = useState('');
   const [formSkeleton, setFormSkeleton] = useState(DEFAULT_SKELETON);
   const [formMeta, setFormMeta] = useState(DEFAULT_META_PROMPT);
+  const [formParams, setFormParams] = useState<readonly TemplateParam[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [providerType, setProviderType] = useState<ProviderType>(selectableProviders[0]!.type);
   const provider = useMemo(
@@ -182,6 +192,11 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
     return () => annotation.remove();
   }, [categoryId, reducedMotion]);
 
+  // Réinitialise les valeurs des variables aux défauts quand on change de catégorie (F-C3).
+  useEffect(() => {
+    setParamValues(defaultParamValues(selectedCategory.template.paramsSchema));
+  }, [selectedCategory]);
+
   async function refreshCategories(): Promise<void> {
     const custom = await deps.templateStore.list();
     setCategories(allCategories(custom));
@@ -192,6 +207,7 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
     setFormName('');
     setFormSkeleton(DEFAULT_SKELETON);
     setFormMeta(DEFAULT_META_PROMPT);
+    setFormParams([]);
     setFormError(null);
     setEditorOpen(true);
   }
@@ -201,8 +217,24 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
     setFormName(bundle.category.name);
     setFormSkeleton(bundle.template.skeleton);
     setFormMeta(bundle.template.metaPrompt);
+    setFormParams(bundle.template.paramsSchema?.params ?? []);
     setFormError(null);
     setEditorOpen(true);
+  }
+
+  function addFormParam(): void {
+    setFormParams((prev) => [
+      ...prev,
+      { key: '', label: '', type: 'text', required: false, defaultValue: '' },
+    ]);
+  }
+
+  function updateFormParam(index: number, patch: Partial<TemplateParam>): void {
+    setFormParams((prev) => prev.map((p, i) => (i === index ? { ...p, ...patch } : p)));
+  }
+
+  function removeFormParam(index: number): void {
+    setFormParams((prev) => prev.filter((_, i) => i !== index));
   }
 
   async function handleSaveTemplate(): Promise<void> {
@@ -215,6 +247,7 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
         name: formName,
         skeleton: formSkeleton,
         metaPrompt: formMeta,
+        params: formParams,
         version: existing ? existing.template.version + 1 : 1,
       });
       await deps.templateStore.save(bundle);
@@ -295,6 +328,12 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
       return;
     }
 
+    const missing = missingRequiredParams(sys.template.paramsSchema, paramValues);
+    if (missing.length > 0) {
+      setError(`Renseigne les variables requises : ${missing.map((p) => p.label).join(', ')}.`);
+      return;
+    }
+
     let apiKey: string | undefined;
     if (provider.needsKey) {
       apiKey = (await deps.secretStore.get(secretRef(provider.type))) ?? undefined;
@@ -306,7 +345,7 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
 
     setBusy(true);
     setGenStatus('thinking');
-    const base = buildBasePrompt(sys.template, intentTrim);
+    const base = buildBasePrompt(sys.template, intentTrim, paramValues);
     if (abMode) {
       setAbRaw(base);
       setAbOptimized('');
@@ -333,6 +372,7 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
           intent: intentTrim,
           adapter,
           options,
+          vars: paramValues,
         })) {
           accumulated += chunk;
           if (firstChunk) {
@@ -566,6 +606,76 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
               onChange={(e) => setFormMeta(e.target.value)}
               aria-label="méta-prompt"
             />
+
+            <div className="mb-2 rounded-lg border-2 border-ink/30 p-2">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="font-hand text-base">Variables (optionnel)</span>
+                <button className="font-hand text-sm text-accent" onClick={addFormParam}>
+                  + ajouter
+                </button>
+              </div>
+              {formParams.length === 0 && (
+                <p className="font-body text-xs text-ink/50">
+                  {'Aucune variable. Référence {{clé}} dans le squelette pour la rendre saisissable.'}
+                </p>
+              )}
+              {formParams.map((p, i) => (
+                <div key={i} className="mb-1 grid grid-cols-2 gap-1 sm:grid-cols-6">
+                  <input
+                    className="rounded border-2 border-ink bg-paper p-1 font-mono text-xs"
+                    placeholder="clé"
+                    value={p.key}
+                    onChange={(e) => updateFormParam(i, { key: e.target.value })}
+                    aria-label="clé variable"
+                  />
+                  <input
+                    className="rounded border-2 border-ink bg-paper p-1 font-body text-xs"
+                    placeholder="libellé"
+                    value={p.label}
+                    onChange={(e) => updateFormParam(i, { label: e.target.value })}
+                    aria-label="libellé variable"
+                  />
+                  <select
+                    className="rounded border-2 border-ink bg-paper p-1 font-body text-xs"
+                    value={p.type}
+                    onChange={(e) =>
+                      updateFormParam(i, { type: e.target.value as TemplateParam['type'] })
+                    }
+                    aria-label="type variable"
+                  >
+                    <option value="text">texte</option>
+                    <option value="select">choix</option>
+                  </select>
+                  <input
+                    className="rounded border-2 border-ink bg-paper p-1 font-body text-xs"
+                    placeholder={p.type === 'select' ? 'options (a, b, c)' : 'défaut'}
+                    value={p.type === 'select' ? (p.options?.join(', ') ?? '') : p.defaultValue}
+                    onChange={(e) =>
+                      p.type === 'select'
+                        ? updateFormParam(i, { options: e.target.value.split(',').map((s) => s.trim()) })
+                        : updateFormParam(i, { defaultValue: e.target.value })
+                    }
+                    aria-label="options ou valeur par défaut"
+                  />
+                  <label className="flex items-center gap-1 font-body text-xs">
+                    <input
+                      type="checkbox"
+                      checked={p.required}
+                      onChange={(e) => updateFormParam(i, { required: e.target.checked })}
+                    />
+                    requis
+                  </label>
+                  <button
+                    className="rounded border-2 border-danger px-1 font-body text-xs text-danger"
+                    onClick={() => removeFormParam(i)}
+                    aria-label="supprimer variable"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+
             {formError && (
               <p className="mb-2 rounded-lg border-2 border-danger bg-paper p-2 font-body text-xs text-danger">
                 {formError}
@@ -655,6 +765,48 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
         />
       </section>
 
+      {selectedCategory.template.paramsSchema &&
+        selectedCategory.template.paramsSchema.params.length > 0 && (
+          <section className="mb-5">
+            <label className="mb-1 block font-hand text-xl">Variables</label>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {selectedCategory.template.paramsSchema.params.map((p) => (
+                <div key={p.key}>
+                  <label className="mb-1 block font-body text-xs text-ink/70">
+                    {p.label}
+                    {p.required ? ' *' : ''}
+                  </label>
+                  {p.type === 'select' && p.options && p.options.length > 0 ? (
+                    <select
+                      className="w-full rounded-lg border-2 border-ink bg-paper p-2 font-body"
+                      value={paramValues[p.key] ?? ''}
+                      onChange={(e) =>
+                        setParamValues((prev) => ({ ...prev, [p.key]: e.target.value }))
+                      }
+                      aria-label={p.label}
+                    >
+                      {p.options.map((o) => (
+                        <option key={o} value={o}>
+                          {o}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      className="w-full rounded-lg border-2 border-ink bg-paper p-2 font-body"
+                      value={paramValues[p.key] ?? ''}
+                      onChange={(e) =>
+                        setParamValues((prev) => ({ ...prev, [p.key]: e.target.value }))
+                      }
+                      aria-label={p.label}
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
       <div className="mb-5 flex flex-wrap items-center gap-4">
         <button
           className="wonk rounded-lg border-2 border-ink bg-accent px-5 py-2 font-hand text-2xl text-ink shadow-sketch transition-transform hover:-translate-y-0.5 disabled:opacity-50"
@@ -722,7 +874,12 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
       )}
 
       {!abMode &&
-        versions.map((v, index) => (
+        versions.map((v, index) => {
+          const quality = scorePrompt(v.prompt);
+          const qualityColor =
+            quality.score >= 80 ? 'text-success' : quality.score >= 50 ? 'text-accent' : 'text-danger';
+          const failed = quality.checks.filter((c) => !c.passed);
+          return (
           <SketchBox key={v.id} className="mb-4 p-4">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <span className="font-hand text-xl">
@@ -785,8 +942,15 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
               Généré par <strong>{v.providerLabel}</strong>
               {v.model ? ` · ${v.model}` : ''} · ~{v.tokens} tokens (estimation)
             </p>
+            <p className={`mt-1 font-hand text-base ${qualityColor}`}>
+              Qualité : {quality.score}/100
+              {failed.length > 0 && (
+                <span className="font-body text-xs text-ink/60"> — à améliorer : {failed.map((c) => c.hint).join(' ')}</span>
+              )}
+            </p>
           </SketchBox>
-        ))}
+          );
+        })}
 
       {!abMode && draft && (
         <SketchBox className="mb-4 p-4" color="#3b82a0">
