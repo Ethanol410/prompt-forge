@@ -62,10 +62,24 @@
   filter: url(#hand-drawn-wobble);
 }
 
+/* Retour visuel au clic : léger enfoncement « dans l'ombre » des boutons. */
+button:not(:disabled) {
+  transition:
+    transform 90ms ease,
+    box-shadow 90ms ease;
+}
+button:not(:disabled):active {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+
 /* Accessibilité : pas de décalage/anim si l'utilisateur le demande (§8). */
 @media (prefers-reduced-motion: reduce) {
   .wonk,
   .wonk-r {
+    transform: none;
+  }
+  button:not(:disabled):active {
     transform: none;
   }
   *,
