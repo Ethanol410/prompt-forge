@@ -10,7 +10,8 @@ export type AnalyticsEvent =
   | { readonly name: 'prompt_copied'; readonly category: string }
   | { readonly name: 'feedback_given'; readonly rating: 'up' | 'down' }
   | { readonly name: 'history_opened' }
-  | { readonly name: 'provider_configured'; readonly provider: ProviderType };
+  | { readonly name: 'provider_configured'; readonly provider: ProviderType }
+  | { readonly name: 'ab_compared'; readonly chosen: 'raw' | 'optimized' };
 
 export interface Analytics {
   /** Enregistre un événement. No-op si l'utilisateur n'a pas opté (opt-out par défaut). */
