@@ -49,6 +49,26 @@ const DEFAULT_SKELETON = `Tu es un expert. Produis un résultat de haute qualit�
 const DEFAULT_META_PROMPT =
   "À partir de l'intention de l'utilisateur et de la structure de référence, rédige le meilleur prompt prêt à l'emploi. Réponds uniquement avec le prompt final, sans préambule. Écris dans la langue de l'intention.";
 
+/** Une version de prompt affichée dans la pile (génération initiale puis affinages successifs). */
+interface PromptVersion {
+  readonly id: string;
+  readonly label: string;
+  readonly prompt: string;
+  readonly tokens: number;
+  readonly fallback: boolean;
+  readonly providerLabel: string;
+  readonly model: string;
+  readonly rating: 'up' | 'down' | null;
+}
+
+type GenStatus = 'idle' | 'thinking' | 'writing' | 'done';
+
+const STATUS_LABEL: Record<Exclude<GenStatus, 'idle'>, string> = {
+  thinking: 'Le modèle réfléchit…',
+  writing: 'Le modèle écrit…',
+  done: 'Le modèle a fini ✓',
+};
+
 /** Choix de provider proposé par la plateforme (la politique D2 s'exprime via cette liste). */
 export interface ProviderChoice {
   readonly type: ProviderType;
@@ -98,20 +118,32 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
   const [keyInput, setKeyInput] = useState('');
   const [keySaved, setKeySaved] = useState(false);
 
-  const [output, setOutput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [usedFallback, setUsedFallback] = useState(false);
-  const [lastId, setLastId] = useState<string | null>(null);
-  const [lastProviderLabel, setLastProviderLabel] = useState<string | null>(null);
-  const [lastModel, setLastModel] = useState<string | null>(null);
-  const [lastTokens, setLastTokens] = useState(0);
-  const [lastRating, setLastRating] = useState<'up' | 'down' | null>(null);
+  const [versions, setVersions] = useState<readonly PromptVersion[]>([]);
+  const [draft, setDraft] = useState<{ readonly label: string; readonly text: string } | null>(null);
+  const [genStatus, setGenStatus] = useState<GenStatus>('idle');
   const [history, setHistory] = useState<readonly Generation[]>([]);
+  const [toasts, setToasts] = useState<readonly { readonly id: number; readonly message: string }[]>([]);
+  const toastSeq = useRef(0);
+
+  function showToast(message: string): void {
+    toastSeq.current += 1;
+    const id = toastSeq.current;
+    setToasts((prev) => [...prev, { id, message }]);
+    window.setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 2500);
+  }
 
   const reducedMotion = usePrefersReducedMotion();
   const titleRef = useRef<HTMLHeadingElement>(null);
   const categoryRef = useRef<HTMLDivElement>(null);
+
+  // Comparaison A/B brut ↔ optimisé (F-S5).
+  const [abMode, setAbMode] = useState(false);
+  const [abRaw, setAbRaw] = useState('');
+  const [abOptimized, setAbOptimized] = useState('');
 
   useEffect(() => {
     void refreshHistory();
@@ -225,11 +257,36 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
     deps.analytics.track({ name: 'provider_configured', provider: provider.type });
   }
 
+  /** Persiste un prompt en historique et renvoie la version d'affichage correspondante. */
+  async function commitVersion(
+    label: string,
+    prompt: string,
+    fallback: boolean,
+    intentForHistory: string,
+  ): Promise<PromptVersion> {
+    const tokens = estimateTokens(prompt);
+    const id = crypto.randomUUID();
+    const generation: Generation = {
+      id,
+      categoryId: selectedCategory.category.id,
+      templateVersion: selectedCategory.template.version,
+      userIntent: intentForHistory,
+      outputPrompt: prompt,
+      providerUsed: provider.type,
+      modelName: model,
+      tokenEstimate: tokens,
+      rating: null,
+      createdAt: new Date().toISOString(),
+    };
+    await deps.historyStore.add(generation);
+    await refreshHistory();
+    return { id, label, prompt, tokens, fallback, providerLabel: provider.label, model, rating: null };
+  }
+
   async function handleGenerate(): Promise<void> {
     setError(null);
-    setOutput('');
-    setUsedFallback(false);
-    setLastId(null);
+    setVersions([]);
+    setGenStatus('idle');
 
     const sys = selectedCategory;
     const intentTrim = intent.trim();
@@ -248,7 +305,21 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
     }
 
     setBusy(true);
+    setGenStatus('thinking');
+    const base = buildBasePrompt(sys.template, intentTrim);
+    if (abMode) {
+      setAbRaw(base);
+      setAbOptimized('');
+    } else {
+      setDraft({ label: 'Prompt généré', text: '' });
+    }
+    const sink = (text: string): void => {
+      if (abMode) setAbOptimized(text);
+      else setDraft({ label: 'Prompt généré', text });
+    };
     let accumulated = '';
+    let firstChunk = true;
+    let fallback = false;
     try {
       const adapter = createProviderAdapter(provider.type, deps.httpClient);
       const options = {
@@ -264,48 +335,57 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
           options,
         })) {
           accumulated += chunk;
-          setOutput(accumulated);
+          if (firstChunk) {
+            firstChunk = false;
+            setGenStatus('writing');
+          }
+          sink(accumulated);
         }
         if (!accumulated.trim()) {
-          accumulated = buildBasePrompt(sys.template, intentTrim);
-          setOutput(accumulated);
-          setUsedFallback(true);
+          accumulated = base;
+          fallback = true;
+          sink(accumulated);
         }
       } catch (cause) {
-        accumulated = buildBasePrompt(sys.template, intentTrim);
-        setOutput(accumulated);
-        setUsedFallback(true);
+        accumulated = base;
+        fallback = true;
+        sink(accumulated);
         setError(`${describeProviderError(cause)} (prompt déterministe affiché)`);
       }
 
-      const tokenEstimate = estimateTokens(accumulated);
-      const generation: Generation = {
-        id: crypto.randomUUID(),
-        categoryId: sys.category.id,
-        templateVersion: sys.template.version,
-        userIntent: intentTrim,
-        outputPrompt: accumulated,
-        providerUsed: provider.type,
-        modelName: model,
-        tokenEstimate,
-        rating: null,
-        createdAt: new Date().toISOString(),
-      };
-      await deps.historyStore.add(generation);
-      setLastId(generation.id);
-      setLastProviderLabel(provider.label);
-      setLastModel(model);
-      setLastTokens(tokenEstimate);
-      setLastRating(null);
       deps.analytics.track({ name: 'prompt_generated', category: sys.category.slug, provider: provider.type });
-      await refreshHistory();
+
+      if (abMode) {
+        setGenStatus('done');
+        return;
+      }
+
+      const version = await commitVersion('Prompt généré', accumulated, fallback, intentTrim);
+      setVersions([version]);
+      setDraft(null);
+      setGenStatus('done');
     } finally {
       setBusy(false);
     }
   }
 
-  async function handleRefine(instruction: string): Promise<void> {
-    if (!output) return;
+  async function handleAbChoose(choice: 'raw' | 'optimized'): Promise<void> {
+    const chosen = choice === 'raw' ? abRaw : abOptimized;
+    if (!chosen) return;
+    deps.analytics.track({ name: 'ab_compared', chosen: choice });
+    const label = choice === 'raw' ? 'Brut (choisi)' : 'Optimisé (choisi)';
+    const version = await commitVersion(label, chosen, false, intent.trim());
+    setVersions([version]);
+    setAbMode(false);
+    setAbRaw('');
+    setAbOptimized('');
+    setGenStatus('done');
+  }
+
+  /** Affinage : AJOUTE une nouvelle version sous la dernière (on garde la trace, on n'efface rien). */
+  async function handleRefine(instruction: string, label: string): Promise<void> {
+    const last = versions[versions.length - 1];
+    if (!last) return;
     setError(null);
 
     let apiKey: string | undefined;
@@ -318,8 +398,12 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
     }
 
     setBusy(true);
-    const current = output;
+    setGenStatus('thinking');
+    setDraft({ label, text: '' });
+    const current = last.prompt;
     let accumulated = '';
+    let firstChunk = true;
+    let fallback = false;
     try {
       const adapter = createProviderAdapter(provider.type, deps.httpClient);
       const options = {
@@ -330,51 +414,46 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
       try {
         for await (const chunk of refineStream({ current, instruction, adapter, options })) {
           accumulated += chunk;
-          setOutput(accumulated);
+          if (firstChunk) {
+            firstChunk = false;
+            setGenStatus('writing');
+          }
+          setDraft({ label, text: accumulated });
         }
         if (!accumulated.trim()) {
           accumulated = current;
-          setOutput(accumulated);
+          fallback = true;
+          setDraft({ label, text: accumulated });
         }
       } catch (cause) {
         accumulated = current;
-        setOutput(accumulated);
+        fallback = true;
+        setDraft({ label, text: accumulated });
         setError(`${describeProviderError(cause)} (affinage indisponible)`);
       }
 
-      const tokenEstimate = estimateTokens(accumulated);
-      const generation: Generation = {
-        id: crypto.randomUUID(),
-        categoryId: selectedCategory.category.id,
-        templateVersion: selectedCategory.template.version,
-        userIntent: `[affinage] ${intent.trim()}`,
-        outputPrompt: accumulated,
-        providerUsed: provider.type,
-        modelName: model,
-        tokenEstimate,
-        rating: null,
-        createdAt: new Date().toISOString(),
-      };
-      await deps.historyStore.add(generation);
-      setLastId(generation.id);
-      setLastTokens(tokenEstimate);
-      setLastRating(null);
-      await refreshHistory();
+      const version = await commitVersion(label, accumulated, fallback, `[affinage] ${intent.trim()}`);
+      setVersions((prev) => [...prev, version]);
+      setDraft(null);
+      setGenStatus('done');
     } finally {
       setBusy(false);
     }
   }
 
-  async function handleCopy(): Promise<void> {
-    if (!output) return;
-    await navigator.clipboard.writeText(output);
-    deps.analytics.track({ name: 'prompt_copied', category: selectedCategory.category.slug });
+  async function handleCopy(prompt: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(prompt);
+      deps.analytics.track({ name: 'prompt_copied', category: selectedCategory.category.slug });
+      showToast('Prompt copié ✓');
+    } catch {
+      showToast('Copie impossible (presse-papier bloqué)');
+    }
   }
 
-  function handleExport(format: ExportFormat): void {
-    if (!output) return;
+  function handleExport(format: ExportFormat, prompt: string): void {
     const file = buildExport(
-      { categoryName: selectedCategory.category.name, intent: intent.trim(), prompt: output },
+      { categoryName: selectedCategory.category.name, intent: intent.trim(), prompt },
       format,
     );
     const url = URL.createObjectURL(new Blob([file.content], { type: file.mimeType }));
@@ -385,12 +464,12 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
     anchor.click();
     anchor.remove();
     URL.revokeObjectURL(url);
+    showToast(`${file.filename} téléchargé ✓`);
   }
 
-  async function handleRate(rating: 'up' | 'down'): Promise<void> {
-    if (!lastId) return;
-    setLastRating(rating);
-    await deps.historyStore.setRating(lastId, rating);
+  async function handleRate(id: string, rating: 'up' | 'down'): Promise<void> {
+    setVersions((prev) => prev.map((v) => (v.id === id ? { ...v, rating } : v)));
+    await deps.historyStore.setRating(id, rating);
     deps.analytics.track({ name: 'feedback_given', rating });
     await refreshHistory();
   }
@@ -403,14 +482,10 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
     await deps.historyStore.clear();
     await Promise.all(providers.map((p) => deps.secretStore.delete(secretRef(p.type))));
     setHistory([]);
-    setOutput('');
+    setVersions([]);
+    setDraft(null);
+    setGenStatus('idle');
     setError(null);
-    setUsedFallback(false);
-    setLastId(null);
-    setLastProviderLabel(null);
-    setLastModel(null);
-    setLastTokens(0);
-    setLastRating(null);
     setKeySaved(false);
   }
 
@@ -580,13 +655,23 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
         />
       </section>
 
-      <button
-        className="wonk mb-5 rounded-lg border-2 border-ink bg-accent px-5 py-2 font-hand text-2xl text-ink shadow-sketch transition-transform hover:-translate-y-0.5 disabled:opacity-50"
-        onClick={() => void handleGenerate()}
-        disabled={busy || !intent.trim()}
-      >
-        {busy ? 'Génération…' : 'Générer le prompt ✶'}
-      </button>
+      <div className="mb-5 flex flex-wrap items-center gap-4">
+        <button
+          className="wonk rounded-lg border-2 border-ink bg-accent px-5 py-2 font-hand text-2xl text-ink shadow-sketch transition-transform hover:-translate-y-0.5 disabled:opacity-50"
+          onClick={() => void handleGenerate()}
+          disabled={busy || !intent.trim()}
+        >
+          {busy ? 'Génération…' : 'Générer le prompt ✶'}
+        </button>
+        <label className="flex items-center gap-2 font-hand text-base">
+          <input
+            type="checkbox"
+            checked={abMode}
+            onChange={(e) => setAbMode(e.target.checked)}
+          />
+          Comparer brut ↔ optimisé
+        </label>
+      </div>
 
       {error && (
         <p className="mb-4 rounded-lg border-2 border-danger bg-paper p-3 font-body text-sm text-danger">
@@ -594,100 +679,151 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
         </p>
       )}
 
-      {output && (
-        <SketchBox className="mb-6 p-4">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <span className="font-hand text-xl">
-              Prompt généré{' '}
-              {usedFallback && (
-                <em className="font-body text-sm text-accent">(fallback déterministe)</em>
-              )}
-            </span>
-            <div className="flex flex-wrap gap-2">
-              <button
-                className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm"
-                onClick={() => void handleCopy()}
-                title="Copie le prompt brut — format prêt pour Claude Code"
-              >
-                Copier
-              </button>
-              <button
-                className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm"
-                onClick={() => handleExport('markdown')}
-                title="Télécharger en Markdown"
-              >
-                .md
-              </button>
-              <button
-                className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm"
-                onClick={() => handleExport('text')}
-                title="Télécharger en texte brut"
-              >
-                .txt
-              </button>
-              <button
-                className={`rounded-lg border-2 border-ink px-2 py-1 font-hand text-base shadow-sketch-sm disabled:opacity-40 ${
-                  lastRating === 'up' ? 'bg-success text-paper' : 'bg-paper'
-                }`}
-                onClick={() => void handleRate('up')}
-                disabled={!lastId}
-                aria-label="pouce en haut"
-                aria-pressed={lastRating === 'up'}
-              >
-                👍
-              </button>
-              <button
-                className={`rounded-lg border-2 border-ink px-2 py-1 font-hand text-base shadow-sketch-sm disabled:opacity-40 ${
-                  lastRating === 'down' ? 'bg-danger text-paper' : 'bg-paper'
-                }`}
-                onClick={() => void handleRate('down')}
-                disabled={!lastId}
-                aria-label="pouce en bas"
-                aria-pressed={lastRating === 'down'}
-              >
-                👎
-              </button>
-            </div>
-          </div>
-          <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border-2 border-ink/20 bg-paper/60 p-3 font-mono text-sm text-ink">
-            {output}
-          </pre>
-          {(lastProviderLabel !== null || lastTokens > 0) && (
-            <p className="mt-2 font-body text-xs text-ink/60">
-              {lastProviderLabel && (
-                <>
-                  Généré par <strong>{lastProviderLabel}</strong>
-                  {lastModel ? ` · ${lastModel}` : ''}
-                </>
-              )}
-              {lastTokens > 0 && <> · ~{lastTokens} tokens (estimation)</>}
-            </p>
+      {genStatus !== 'idle' && (
+        <div className="mb-4 flex items-center gap-3 font-hand text-lg text-ink/80">
+          {(genStatus === 'thinking' || genStatus === 'writing') && (
+            <span
+              className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-ink border-t-transparent"
+              aria-hidden="true"
+            />
           )}
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="self-center font-hand text-base text-ink/70">Affiner :</span>
+          <span aria-live="polite">{STATUS_LABEL[genStatus]}</span>
+        </div>
+      )}
+
+      {abMode && (abRaw !== '' || abOptimized !== '') && (
+        <section className="mb-6 grid gap-4 md:grid-cols-2">
+          <SketchBox className="p-4" color="#3b82a0">
+            <h3 className="mb-2 font-hand text-xl">Brut (template)</h3>
+            <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-lg border-2 border-ink/20 bg-paper/60 p-3 font-mono text-xs text-ink">
+              {abRaw}
+            </pre>
             <button
-              className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm disabled:opacity-40"
-              onClick={() => void handleRefine(REFINEMENTS.shorter)}
-              disabled={busy}
+              className="mt-2 w-full rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm"
+              onClick={() => void handleAbChoose('raw')}
             >
-              Plus court
+              Choisir le brut 👍
             </button>
+          </SketchBox>
+          <SketchBox className="p-4" color="#e8743b">
+            <h3 className="mb-2 font-hand text-xl">Optimisé (LLM)</h3>
+            <pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-lg border-2 border-ink/20 bg-paper/60 p-3 font-mono text-xs text-ink">
+              {abOptimized || (busy ? '…' : '')}
+            </pre>
             <button
-              className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm disabled:opacity-40"
-              onClick={() => void handleRefine(REFINEMENTS.more_technical)}
-              disabled={busy}
+              className="mt-2 w-full rounded-lg border-2 border-ink bg-accent px-2 py-1 font-hand text-base text-ink shadow-sketch-sm disabled:opacity-40"
+              onClick={() => void handleAbChoose('optimized')}
+              disabled={!abOptimized}
             >
-              Plus technique
+              Choisir l'optimisé 👍
             </button>
-            <button
-              className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm disabled:opacity-40"
-              onClick={() => void handleRefine(REFINEMENTS.more_formal)}
-              disabled={busy}
-            >
-              Plus formel
-            </button>
-          </div>
+          </SketchBox>
+        </section>
+      )}
+
+      {!abMode &&
+        versions.map((v, index) => (
+          <SketchBox key={v.id} className="mb-4 p-4">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <span className="font-hand text-xl">
+                {v.label}
+                {v.fallback && (
+                  <em className="font-body text-sm text-accent"> (fallback déterministe)</em>
+                )}
+                {index > 0 && (
+                  <span className="font-body text-xs text-ink/40"> · version {index + 1}</span>
+                )}
+              </span>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm"
+                  onClick={() => void handleCopy(v.prompt)}
+                  title="Copie le prompt brut — format prêt pour Claude Code"
+                >
+                  Copier
+                </button>
+                <button
+                  className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm"
+                  onClick={() => handleExport('markdown', v.prompt)}
+                  title="Télécharger en Markdown"
+                >
+                  .md
+                </button>
+                <button
+                  className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm"
+                  onClick={() => handleExport('text', v.prompt)}
+                  title="Télécharger en texte brut"
+                >
+                  .txt
+                </button>
+                <button
+                  className={`rounded-lg border-2 border-ink px-2 py-1 font-hand text-base shadow-sketch-sm ${
+                    v.rating === 'up' ? 'bg-success text-paper' : 'bg-paper'
+                  }`}
+                  onClick={() => void handleRate(v.id, 'up')}
+                  aria-label="pouce en haut"
+                  aria-pressed={v.rating === 'up'}
+                >
+                  👍
+                </button>
+                <button
+                  className={`rounded-lg border-2 border-ink px-2 py-1 font-hand text-base shadow-sketch-sm ${
+                    v.rating === 'down' ? 'bg-danger text-paper' : 'bg-paper'
+                  }`}
+                  onClick={() => void handleRate(v.id, 'down')}
+                  aria-label="pouce en bas"
+                  aria-pressed={v.rating === 'down'}
+                >
+                  👎
+                </button>
+              </div>
+            </div>
+            <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border-2 border-ink/20 bg-paper/60 p-3 font-mono text-sm text-ink">
+              {v.prompt}
+            </pre>
+            <p className="mt-2 font-body text-xs text-ink/60">
+              Généré par <strong>{v.providerLabel}</strong>
+              {v.model ? ` · ${v.model}` : ''} · ~{v.tokens} tokens (estimation)
+            </p>
+          </SketchBox>
+        ))}
+
+      {!abMode && draft && (
+        <SketchBox className="mb-4 p-4" color="#3b82a0">
+          <div className="mb-2 font-hand text-xl">{draft.label}</div>
+          <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border-2 border-ink/20 bg-paper/60 p-3 font-mono text-sm text-ink">
+            {draft.text || '…'}
+          </pre>
         </SketchBox>
+      )}
+
+      {!abMode && versions.length > 0 && !draft && (
+        <div className="mb-6 flex flex-wrap items-center gap-2">
+          <span className="self-center font-hand text-base text-ink/70">
+            Affiner (ajoute une version) :
+          </span>
+          <button
+            className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm disabled:opacity-40"
+            onClick={() => void handleRefine(REFINEMENTS.shorter, 'Plus court')}
+            disabled={busy}
+          >
+            Plus court
+          </button>
+          <button
+            className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm disabled:opacity-40"
+            onClick={() => void handleRefine(REFINEMENTS.more_technical, 'Plus technique')}
+            disabled={busy}
+          >
+            Plus technique
+          </button>
+          <button
+            className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm disabled:opacity-40"
+            onClick={() => void handleRefine(REFINEMENTS.more_formal, 'Plus formel')}
+            disabled={busy}
+          >
+            Plus formel
+          </button>
+        </div>
       )}
 
       <section>
@@ -711,6 +847,18 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
           ))}
         </ul>
       </section>
+
+      <div
+        className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex flex-col items-center gap-2"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {toasts.map((t) => (
+          <div key={t.id} className="card-sketch px-4 py-2 font-hand text-lg text-ink">
+            {t.message}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

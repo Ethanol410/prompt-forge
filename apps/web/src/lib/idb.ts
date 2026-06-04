@@ -4,7 +4,7 @@
  * Règle de sécurité : `localStorage` n'est JAMAIS utilisé pour les secrets (uniquement IndexedDB).
  */
 const DB_NAME = 'promptforge';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 export const STORE_KEYS = 'crypto-keys';
 export const STORE_SECRETS = 'secrets';
