@@ -69,6 +69,11 @@ export class SqliteHistoryStore implements HistoryStore {
     await db.execute('UPDATE generations SET rating = $1 WHERE id = $2', [rating, id]);
   }
 
+  async delete(id: string): Promise<void> {
+    const db = await getDb();
+    await db.execute('DELETE FROM generations WHERE id = $1', [id]);
+  }
+
   async clear(): Promise<void> {
     const db = await getDb();
     await db.execute('DELETE FROM generations');

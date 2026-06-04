@@ -11,6 +11,8 @@ export interface HistoryStore {
   list(): Promise<readonly Generation[]>;
   get(id: string): Promise<Generation | null>;
   setRating(id: string, rating: Rating): Promise<void>;
+  /** Supprime une seule entrée d'historique (no-op si absente). */
+  delete(id: string): Promise<void>;
   /** Purge tout l'historique local. */
   clear(): Promise<void>;
 }

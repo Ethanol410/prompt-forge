@@ -48,6 +48,16 @@ describe('IndexedDbHistoryStore', () => {
     expect(original.rating).toBeNull();
   });
 
+  it('delete supprime une seule entrée', async () => {
+    const store = new IndexedDbHistoryStore();
+    await store.add(gen('1', '2026-01-01T00:00:00.000Z'));
+    await store.add(gen('2', '2026-06-01T00:00:00.000Z'));
+    await store.delete('1');
+    const list = await store.list();
+    expect(list.map((g) => g.id)).toEqual(['2']);
+    expect(await store.get('1')).toBeNull();
+  });
+
   it('clear purge tout l’historique (RGPD)', async () => {
     const store = new IndexedDbHistoryStore();
     await store.add(gen('1', '2026-01-01T00:00:00.000Z'));

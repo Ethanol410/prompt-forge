@@ -1,5 +1,5 @@
 import type { HistoryStore, Generation, Rating } from '@promptforge/core';
-import { idbGet, idbPut, idbGetAll, idbClear, STORE_HISTORY } from '../lib/idb.js';
+import { idbGet, idbPut, idbGetAll, idbDelete, idbClear, STORE_HISTORY } from '../lib/idb.js';
 
 /** HistoryStore web : historique local dans IndexedDB (NF-C1). `clear()` couvre le RGPD (NF-C3). */
 export class IndexedDbHistoryStore implements HistoryStore {
@@ -21,6 +21,10 @@ export class IndexedDbHistoryStore implements HistoryStore {
     if (!existing) return;
     // Mise à jour immuable : nouvel objet, pas de mutation.
     await idbPut(STORE_HISTORY, { ...existing, rating });
+  }
+
+  async delete(id: string): Promise<void> {
+    await idbDelete(STORE_HISTORY, id);
   }
 
   async clear(): Promise<void> {
