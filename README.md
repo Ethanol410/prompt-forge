@@ -9,6 +9,9 @@ en un prompt clair, contraint et réutilisable — avec **ta propre clé d'API**
 
 Le livrable, c'est le prompt : tu l'emportes où tu veux.
 
+[![Live demo](https://img.shields.io/badge/▶_live_demo-prompt--forge.vercel.app-e8743b?style=for-the-badge)](https://prompt-forge-desktop.vercel.app/)
+[![Download](https://img.shields.io/github/v/release/Ethanol410/prompt-forge?style=for-the-badge&label=download&logo=windows&color=2b82a0)](https://github.com/Ethanol410/prompt-forge/releases/latest)
+
 [Démarrage web](#-démarrage-rapide-web) · [Télécharger pour Windows](https://github.com/Ethanol410/prompt-forge/releases/latest) · [Sécurité](#-sécurité--confidentialité)
 
 </div>
