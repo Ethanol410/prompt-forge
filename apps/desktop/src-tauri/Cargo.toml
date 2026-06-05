@@ -19,3 +19,8 @@ tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 keyring = { version = "3", features = ["windows-native"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Client HTTP natif pour les endpoints LOCAUX uniquement (Ollama / LM Studio).
+# reqwest n'ajoute aucun en-tête `Origin` (contrairement au plugin-http qui force
+# `http://tauri.localhost`, rejeté en 403 par Ollama). `stream` = corps en flux.
+reqwest = { version = "0.12", default-features = false, features = ["stream", "charset"] }
+futures-util = "0.3"
