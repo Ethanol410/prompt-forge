@@ -27,7 +27,7 @@ export function Root(): ReactElement {
   }, []);
 
   if (path === APP_PATH) {
-    return <App />;
+    return <App onNavigateHome={() => navigate('/')} />;
   }
 
   return (

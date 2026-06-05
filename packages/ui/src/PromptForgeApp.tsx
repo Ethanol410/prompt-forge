@@ -106,6 +106,11 @@ export interface PromptForgeAppProps {
    * barre latérale, pointant vers cette URL d'installeur. Omis sur desktop.
    */
   readonly desktopDownloadUrl?: string;
+  /**
+   * Si fourni (web uniquement), affiche un lien « ← Accueil » qui ramène à la landing.
+   * Omis sur desktop (pas de landing).
+   */
+  readonly onNavigateHome?: () => void;
 }
 
 const secretRef = (type: ProviderType): string => `provider:${type}`;
@@ -115,6 +120,7 @@ export function PromptForgeApp({
   providers,
   platformLabel,
   desktopDownloadUrl,
+  onNavigateHome,
 }: PromptForgeAppProps): ReactElement {
   const selectableProviders = useMemo(() => providers.filter((p) => !p.disabled), [providers]);
   const [categories, setCategories] = useState<readonly CategoryBundle[]>(SYSTEM_CATEGORIES);
@@ -704,6 +710,14 @@ export function PromptForgeApp({
 
       {/* Barre latérale : titre, actions, historique */}
       <aside className="flex w-full shrink-0 flex-col gap-3 border-b-2 border-ink/15 p-4 md:max-h-screen md:w-72 md:border-b-0 md:border-r-2">
+        {onNavigateHome && (
+          <button
+            onClick={onNavigateHome}
+            className="self-start font-hand text-base text-ink/60 hover:text-ink"
+          >
+            ← Accueil
+          </button>
+        )}
         <div>
           <h1 ref={titleRef} className="inline-block font-hand text-3xl font-bold leading-none text-ink">
             PromptForge

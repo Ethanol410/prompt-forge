@@ -86,13 +86,19 @@ const WEB_PROVIDERS: readonly ProviderChoice[] = [
   },
 ];
 
-export function App(): ReactElement {
+export interface AppProps {
+  /** Retour vers la landing (fourni par le routeur web). */
+  readonly onNavigateHome?: () => void;
+}
+
+export function App({ onNavigateHome }: AppProps = {}): ReactElement {
   return (
     <PromptForgeApp
       deps={deps}
       providers={WEB_PROVIDERS}
       platformLabel="web"
       desktopDownloadUrl={DESKTOP_DOWNLOAD_URL}
+      onNavigateHome={onNavigateHome}
     />
   );
 }
