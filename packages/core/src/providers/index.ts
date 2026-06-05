@@ -1,6 +1,8 @@
 export type { ProviderAdapter, GenerateOptions } from './types.js';
 export { ProviderError, describeProviderError } from './errors.js';
 export type { ProviderErrorCode } from './errors.js';
+export { validateApiKeyFormat } from './validate.js';
+export type { KeyValidation } from './validate.js';
 export { AnthropicAdapter } from './anthropic.js';
 export { OllamaAdapter } from './ollama.js';
 export { OpenAiCompatibleAdapter } from './openai-compatible.js';

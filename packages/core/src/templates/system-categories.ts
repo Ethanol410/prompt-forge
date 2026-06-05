@@ -11,9 +11,15 @@ import type { CategoryBundle } from '../models/category-bundle.js';
 export type SystemCategory = CategoryBundle;
 
 const META_PROMPT_COMMON =
-  'Réponds UNIQUEMENT avec le prompt final, sans préambule, sans explication, sans entourer de balises de code. ' +
-  "Écris dans la langue de l'intention de l'utilisateur. Sois spécifique et actionnable : précise le rôle, le contexte, " +
-  'la structure de sortie attendue, les contraintes de qualité et le format.';
+  'Tu es un expert en prompt engineering. À partir de l’intention et de la structure de référence, ' +
+  'produis LE prompt optimal, prêt à coller dans un assistant IA. Le prompt final doit : ' +
+  '(1) assigner un rôle clair et expert ; (2) rappeler le contexte utile ; ' +
+  '(3) découper la tâche en étapes ordonnées ; (4) lister des contraintes explicites et vérifiables ; ' +
+  '(5) spécifier précisément le format de sortie attendu ; ' +
+  '(6) lever les ambiguïtés et indiquer quoi faire en cas d’information manquante (poser des questions ou marquer [HYPOTHÈSE]). ' +
+  'Reste fidèle à l’intention sans inventer de faits. ' +
+  'Réponds UNIQUEMENT avec le prompt final — aucun préambule, aucun commentaire, aucune balise de code. ' +
+  'Écris dans la langue de l’intention de l’utilisateur.';
 
 function def(
   slug: string,
