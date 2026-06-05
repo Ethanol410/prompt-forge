@@ -14,12 +14,15 @@ function strictCspPlugin(): Plugin {
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data:",
-    "font-src 'self'",
+    // `data:` requis : Vite inline certaines sous-polices (@fontsource) en data-URI au build.
+    // Une police data-URI est inerte (aucune exécution) → la CSP reste stricte.
+    "font-src 'self' data:",
     "connect-src 'self' https://api.anthropic.com https://openrouter.ai http://localhost:* http://127.0.0.1:*",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
-    "frame-ancestors 'none'",
+    // `frame-ancestors` est ignoré en <meta> ; l'anti-clickjacking est posé en en-tête HTTP
+    // (X-Frame-Options: DENY) via vercel.json.
   ].join('; ');
 
   return {
