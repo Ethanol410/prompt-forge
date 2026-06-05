@@ -20,6 +20,9 @@ apps/desktop/src-tauri/gen/
 # Artefacts de test e2e / navigateur
 .playwright-mcp/
 *-verification.png
+test-results/
+playwright-report/
+.last-run.json
 
 # Éditeurs / OS
 .DS_Store
