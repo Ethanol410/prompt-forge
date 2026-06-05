@@ -101,11 +101,21 @@ export interface PromptForgeAppProps {
   readonly deps: AppDeps;
   readonly providers: readonly ProviderChoice[];
   readonly platformLabel?: string;
+  /**
+   * Si fourni (web uniquement), affiche un encart « Télécharger l'app desktop » en bas de la
+   * barre latérale, pointant vers cette URL d'installeur. Omis sur desktop.
+   */
+  readonly desktopDownloadUrl?: string;
 }
 
 const secretRef = (type: ProviderType): string => `provider:${type}`;
 
-export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAppProps): ReactElement {
+export function PromptForgeApp({
+  deps,
+  providers,
+  platformLabel,
+  desktopDownloadUrl,
+}: PromptForgeAppProps): ReactElement {
   const selectableProviders = useMemo(() => providers.filter((p) => !p.disabled), [providers]);
   const [categories, setCategories] = useState<readonly CategoryBundle[]>(SYSTEM_CATEGORIES);
   const [categoryId, setCategoryId] = useState(SYSTEM_CATEGORIES[0]!.category.id);
@@ -746,6 +756,18 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
             </li>
           ))}
         </ul>
+
+        {desktopDownloadUrl && (
+          <a
+            href={desktopDownloadUrl}
+            className="mt-auto block rounded-lg border-2 border-ink bg-paper p-3 shadow-sketch-sm transition hover:-translate-y-0.5"
+          >
+            <div className="font-hand text-base leading-tight">⤓ App desktop</div>
+            <div className="font-body text-xs text-ink/60">
+              Windows · OpenAI &amp; tous providers, clés dans le keychain OS.
+            </div>
+          </a>
+        )}
       </aside>
 
       {/* Zone principale */}

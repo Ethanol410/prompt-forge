@@ -7,6 +7,7 @@ import { FetchHttpClient } from './adapters/fetch-http-client.js';
 import { IndexedDbHistoryStore } from './adapters/indexeddb-history-store.js';
 import { IndexedDbTemplateStore } from './adapters/indexeddb-template-store.js';
 import { IndexedDbPrefsStore } from './adapters/indexeddb-prefs-store.js';
+import { DESKTOP_DOWNLOAD_URL } from './config.js';
 
 // Adapters web injectés (BYOK direct, aucun backend éditeur).
 const deps: AppDeps = {
@@ -86,5 +87,12 @@ const WEB_PROVIDERS: readonly ProviderChoice[] = [
 ];
 
 export function App(): ReactElement {
-  return <PromptForgeApp deps={deps} providers={WEB_PROVIDERS} platformLabel="web" />;
+  return (
+    <PromptForgeApp
+      deps={deps}
+      providers={WEB_PROVIDERS}
+      platformLabel="web"
+      desktopDownloadUrl={DESKTOP_DOWNLOAD_URL}
+    />
+  );
 }
