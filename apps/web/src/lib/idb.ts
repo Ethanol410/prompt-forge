@@ -4,12 +4,13 @@
  * Règle de sécurité : `localStorage` n'est JAMAIS utilisé pour les secrets (uniquement IndexedDB).
  */
 const DB_NAME = 'promptforge';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 export const STORE_KEYS = 'crypto-keys';
 export const STORE_SECRETS = 'secrets';
 export const STORE_HISTORY = 'history';
 export const STORE_TEMPLATES = 'templates';
+export const STORE_PREFS = 'prefs';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -26,6 +27,9 @@ export function openDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORE_TEMPLATES)) {
         db.createObjectStore(STORE_TEMPLATES);
+      }
+      if (!db.objectStoreNames.contains(STORE_PREFS)) {
+        db.createObjectStore(STORE_PREFS);
       }
     };
     request.onsuccess = () => resolve(request.result);

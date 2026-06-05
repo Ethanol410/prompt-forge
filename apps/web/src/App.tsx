@@ -6,6 +6,7 @@ import { getOrCreateMasterKey } from './adapters/key-vault.js';
 import { FetchHttpClient } from './adapters/fetch-http-client.js';
 import { IndexedDbHistoryStore } from './adapters/indexeddb-history-store.js';
 import { IndexedDbTemplateStore } from './adapters/indexeddb-template-store.js';
+import { IndexedDbPrefsStore } from './adapters/indexeddb-prefs-store.js';
 
 // Adapters web injectés (BYOK direct, aucun backend éditeur).
 const deps: AppDeps = {
@@ -13,6 +14,7 @@ const deps: AppDeps = {
   httpClient: new FetchHttpClient(),
   historyStore: new IndexedDbHistoryStore(),
   templateStore: new IndexedDbTemplateStore(),
+  prefsStore: new IndexedDbPrefsStore(),
   analytics: new NoopAnalytics(),
 };
 

@@ -26,6 +26,12 @@ export function getDb(): Promise<Database> {
         data TEXT NOT NULL
       )`,
     );
+    await db.execute(
+      `CREATE TABLE IF NOT EXISTS prefs (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )`,
+    );
     return db;
   });
   dbPromise = loading;

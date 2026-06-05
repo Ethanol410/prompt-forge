@@ -5,6 +5,7 @@ import { KeychainSecretStore } from './adapters/keychain-secret-store.js';
 import { TauriHttpClient } from './adapters/tauri-http-client.js';
 import { SqliteHistoryStore } from './adapters/sqlite-history-store.js';
 import { SqliteTemplateStore } from './adapters/sqlite-template-store.js';
+import { SqlitePrefsStore } from './adapters/sqlite-prefs-store.js';
 
 // Adapters desktop injectés (BYOK direct ; clé dans le keychain OS).
 const deps: AppDeps = {
@@ -12,6 +13,7 @@ const deps: AppDeps = {
   httpClient: new TauriHttpClient(),
   historyStore: new SqliteHistoryStore(),
   templateStore: new SqliteTemplateStore(),
+  prefsStore: new SqlitePrefsStore(),
   analytics: new NoopAnalytics(),
 };
 
