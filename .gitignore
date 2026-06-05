@@ -34,5 +34,7 @@ playwright-report/
 
 CLAUDE.md
 *.md
+# Le README du dépôt est public (les autres docs restent ignorées).
+!README.md
 
 
