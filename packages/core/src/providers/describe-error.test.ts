@@ -11,6 +11,10 @@ describe('describeProviderError', () => {
     expect(describeProviderError(new ProviderError('http_error', 'x', 403))).toContain('invalide');
   });
 
+  it('404 → modèle introuvable', () => {
+    expect(describeProviderError(new ProviderError('http_error', 'x', 404))).toContain('introuvable');
+  });
+
   it('429 → quota', () => {
     expect(describeProviderError(new ProviderError('http_error', 'x', 429))).toContain('Quota');
   });

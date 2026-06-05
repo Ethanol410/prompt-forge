@@ -39,6 +39,8 @@ export function describeProviderError(error: unknown): string {
       case 'http_error': {
         const status = error.status;
         if (status === 401 || status === 403) return 'Clé API invalide ou non autorisée.';
+        if (status === 404)
+          return 'Modèle ou ressource introuvable (404). Vérifie le nom du modèle (ex. « ollama pull llama3.2 ») et qu’il est bien installé.';
         if (status === 429) return 'Quota dépassé ou trop de requêtes — réessaie plus tard.';
         if (status !== undefined && status >= 500) return `Erreur serveur du provider (statut ${status}).`;
         return status !== undefined
