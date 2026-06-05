@@ -21,6 +21,8 @@ import {
   defaultParamValues,
   missingRequiredParams,
   scorePrompt,
+  estimateCost,
+  validateApiKeyFormat,
   type ExportFormat,
   type ProviderType,
   type Generation,
@@ -30,6 +32,7 @@ import {
   type HttpClient,
   type HistoryStore,
   type TemplateStore,
+  type PrefsStore,
   type Analytics,
 } from '@promptforge/core';
 
@@ -39,6 +42,7 @@ export interface AppDeps {
   readonly httpClient: HttpClient;
   readonly historyStore: HistoryStore;
   readonly templateStore: TemplateStore;
+  readonly prefsStore: PrefsStore;
   readonly analytics: Analytics;
 }
 
@@ -60,9 +64,16 @@ interface PromptVersion {
   readonly prompt: string;
   readonly tokens: number;
   readonly fallback: boolean;
+  readonly providerType: ProviderType;
   readonly providerLabel: string;
   readonly model: string;
   readonly rating: 'up' | 'down' | null;
+}
+
+interface Toast {
+  readonly id: number;
+  readonly message: string;
+  readonly action?: { readonly label: string; readonly onClick: () => void };
 }
 
 type GenStatus = 'idle' | 'thinking' | 'writing' | 'done';
@@ -135,21 +146,28 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
   const [genStatus, setGenStatus] = useState<GenStatus>('idle');
   const [threadIntent, setThreadIntent] = useState<string | null>(null);
   const [history, setHistory] = useState<readonly Generation[]>([]);
-  const [toasts, setToasts] = useState<readonly { readonly id: number; readonly message: string }[]>([]);
+  const [toasts, setToasts] = useState<readonly Toast[]>([]);
   const toastSeq = useRef(0);
 
-  function showToast(message: string): void {
+  function showToast(message: string, action?: Toast['action']): void {
     toastSeq.current += 1;
     const id = toastSeq.current;
-    setToasts((prev) => [...prev, { id, message }]);
-    window.setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 2500);
+    setToasts((prev) => [...prev, { id, message, action }]);
+    window.setTimeout(
+      () => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      },
+      action ? 6000 : 2500,
+    );
   }
 
   const reducedMotion = usePrefersReducedMotion();
   const titleRef = useRef<HTMLHeadingElement>(null);
   const categoryRef = useRef<HTMLDivElement>(null);
+  const threadRef = useRef<HTMLDivElement>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const hydratedRef = useRef(false);
 
   // Comparaison A/B brut ↔ optimisé (F-S5).
   const [abMode, setAbMode] = useState(false);
@@ -159,7 +177,44 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
   useEffect(() => {
     void refreshHistory();
     void refreshCategories();
+    // Restaure les préférences (dernière catégorie / provider).
+    void (async () => {
+      const lastCategory = await deps.prefsStore.get<string>('lastCategoryId');
+      if (lastCategory) setCategoryId(lastCategory);
+      const lastProvider = await deps.prefsStore.get<ProviderType>('lastProviderType');
+      if (lastProvider && selectableProviders.some((p) => p.type === lastProvider)) {
+        setProviderType(lastProvider);
+      }
+      hydratedRef.current = true;
+    })();
   }, []);
+
+  // Sauvegarde des préférences (après hydratation, pour ne pas écraser avec les défauts).
+  useEffect(() => {
+    if (hydratedRef.current) void deps.prefsStore.set('lastCategoryId', categoryId);
+  }, [categoryId]);
+  useEffect(() => {
+    if (hydratedRef.current) void deps.prefsStore.set('lastProviderType', providerType);
+  }, [providerType]);
+
+  // Auto-scroll du fil quand le contenu change (comme un chat).
+  useEffect(() => {
+    threadRef.current?.scrollTo({
+      top: threadRef.current.scrollHeight,
+      behavior: reducedMotion ? 'auto' : 'smooth',
+    });
+  }, [versions, draft, genStatus, reducedMotion]);
+
+  // Échap ferme la modale d'édition de template ; focus le 1er champ à l'ouverture (a11y).
+  useEffect(() => {
+    if (!editorOpen) return;
+    nameInputRef.current?.focus();
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setEditorOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [editorOpen]);
 
   // rough-notation : souligner le titre (une fois, au montage).
   useEffect(() => {
@@ -285,10 +340,12 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
 
   async function handleSaveKey(): Promise<void> {
     if (!keyInput.trim()) return;
+    const validation = validateApiKeyFormat(provider.type, keyInput);
     await deps.secretStore.set(secretRef(provider.type), keyInput.trim());
     setKeyInput('');
     setKeySaved(true);
     deps.analytics.track({ name: 'provider_configured', provider: provider.type });
+    showToast(validation.ok ? 'Clé enregistrée ✓' : `Enregistrée — ${validation.message}`);
   }
 
   /** Persiste un prompt en historique et renvoie la version d'affichage correspondante. */
@@ -314,7 +371,17 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
     };
     await deps.historyStore.add(generation);
     await refreshHistory();
-    return { id, label, prompt, tokens, fallback, providerLabel: provider.label, model, rating: null };
+    return {
+      id,
+      label,
+      prompt,
+      tokens,
+      fallback,
+      providerType: provider.type,
+      providerLabel: provider.label,
+      model,
+      rating: null,
+    };
   }
 
   async function handleGenerate(): Promise<void> {
@@ -347,6 +414,8 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
     setThreadIntent(intentTrim);
     setBusy(true);
     setGenStatus('thinking');
+    const controller = new AbortController();
+    abortRef.current = controller;
     const base = buildBasePrompt(sys.template, intentTrim, paramValues);
     if (abMode) {
       setAbRaw(base);
@@ -361,12 +430,14 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
     let accumulated = '';
     let firstChunk = true;
     let fallback = false;
+    let aborted = false;
     try {
       const adapter = createProviderAdapter(provider.type, deps.httpClient);
       const options = {
         model,
         ...(apiKey ? { apiKey } : {}),
         ...(provider.isLocal && baseUrl ? { baseUrl } : {}),
+        signal: controller.signal,
       };
       try {
         for await (const chunk of optimizeStream({
@@ -389,10 +460,14 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
           sink(accumulated);
         }
       } catch (cause) {
-        accumulated = base;
-        fallback = true;
-        sink(accumulated);
-        setError(`${describeProviderError(cause)} (prompt déterministe affiché)`);
+        if (controller.signal.aborted) {
+          aborted = true;
+        } else {
+          accumulated = base;
+          fallback = true;
+          sink(accumulated);
+          setError(`${describeProviderError(cause)} (prompt déterministe affiché)`);
+        }
       }
 
       deps.analytics.track({ name: 'prompt_generated', category: sys.category.slug, provider: provider.type });
@@ -402,12 +477,21 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
         return;
       }
 
-      const version = await commitVersion('Prompt généré', accumulated, fallback, intentTrim);
+      // Interruption sans aucun texte reçu : annulation propre, pas de version.
+      if (aborted && accumulated.trim().length === 0) {
+        setDraft(null);
+        setGenStatus('idle');
+        return;
+      }
+
+      const label = aborted ? 'Prompt généré (interrompu)' : 'Prompt généré';
+      const version = await commitVersion(label, accumulated, fallback, intentTrim);
       setVersions([version]);
       setDraft(null);
       setGenStatus('done');
     } finally {
       setBusy(false);
+      abortRef.current = null;
     }
   }
 
@@ -442,16 +526,20 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
     setBusy(true);
     setGenStatus('thinking');
     setDraft({ label, text: '' });
+    const controller = new AbortController();
+    abortRef.current = controller;
     const current = last.prompt;
     let accumulated = '';
     let firstChunk = true;
     let fallback = false;
+    let aborted = false;
     try {
       const adapter = createProviderAdapter(provider.type, deps.httpClient);
       const options = {
         model,
         ...(apiKey ? { apiKey } : {}),
         ...(provider.isLocal && baseUrl ? { baseUrl } : {}),
+        signal: controller.signal,
       };
       try {
         for await (const chunk of refineStream({ current, instruction, adapter, options })) {
@@ -468,19 +556,39 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
           setDraft({ label, text: accumulated });
         }
       } catch (cause) {
-        accumulated = current;
-        fallback = true;
-        setDraft({ label, text: accumulated });
-        setError(`${describeProviderError(cause)} (affinage indisponible)`);
+        if (controller.signal.aborted) {
+          aborted = true;
+        } else {
+          accumulated = current;
+          fallback = true;
+          setDraft({ label, text: accumulated });
+          setError(`${describeProviderError(cause)} (affinage indisponible)`);
+        }
       }
 
-      const version = await commitVersion(label, accumulated, fallback, `[affinage] ${intent.trim()}`);
+      if (aborted && accumulated.trim().length === 0) {
+        setDraft(null);
+        setGenStatus('idle');
+        return;
+      }
+
+      const version = await commitVersion(
+        aborted ? `${label} (interrompu)` : label,
+        accumulated,
+        fallback,
+        `[affinage] ${intent.trim()}`,
+      );
       setVersions((prev) => [...prev, version]);
       setDraft(null);
       setGenStatus('done');
     } finally {
       setBusy(false);
+      abortRef.current = null;
     }
+  }
+
+  function handleStop(): void {
+    abortRef.current?.abort();
   }
 
   async function handleCopy(prompt: string): Promise<void> {
@@ -551,6 +659,7 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
         prompt: g.outputPrompt,
         tokens: g.tokenEstimate ?? estimateTokens(g.outputPrompt),
         fallback: false,
+        providerType: g.providerUsed,
         providerLabel: g.providerUsed,
         model: g.modelName,
         rating: g.rating,
@@ -563,9 +672,18 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
   }
 
   /** Supprime une seule entrée de l'historique. */
-  async function handleDeleteHistory(id: string): Promise<void> {
-    await deps.historyStore.delete(id);
+  async function handleDeleteHistory(g: Generation): Promise<void> {
+    await deps.historyStore.delete(g.id);
     await refreshHistory();
+    showToast('Entrée supprimée', {
+      label: 'Annuler',
+      onClick: () => {
+        void (async () => {
+          await deps.historyStore.add(g);
+          await refreshHistory();
+        })();
+      },
+    });
   }
 
   const templateParams = selectedCategory.template.paramsSchema?.params ?? [];
@@ -619,7 +737,7 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
               </button>
               <button
                 className="shrink-0 rounded px-1 text-ink/40 hover:text-danger"
-                onClick={() => void handleDeleteHistory(g.id)}
+                onClick={() => void handleDeleteHistory(g)}
                 aria-label="supprimer cette entrée"
                 title="Supprimer cette entrée"
               >
@@ -730,7 +848,7 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
         </div>
 
         {/* Fil de génération */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div ref={threadRef} className="flex-1 overflow-y-auto p-4" role="log" aria-live="polite">
           {!threadIntent && versions.length === 0 && !draft && !abMode && (
             <p className="mt-16 text-center font-hand text-2xl text-ink/40">
               Décris ton besoin en bas pour forger un prompt ✶
@@ -739,7 +857,9 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
 
           {threadIntent && (
             <div className="mb-4 flex justify-end">
-              <div className="card-sketch max-w-[80%] px-4 py-2 font-body text-sm">{threadIntent}</div>
+              <div className="animate-pf-in card-sketch max-w-[80%] px-4 py-2 font-body text-sm">
+              {threadIntent}
+            </div>
             </div>
           )}
 
@@ -801,8 +921,14 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
                     ? 'text-accent'
                     : 'text-danger';
               const failed = quality.checks.filter((c) => !c.passed);
+              const cost = estimateCost(v.providerType, v.model, v.tokens);
+              const costLabel = cost.free
+                ? 'gratuit (local)'
+                : cost.amountUsd !== null
+                  ? `~$${cost.amountUsd.toFixed(cost.amountUsd < 0.01 ? 5 : 3)} (est.)`
+                  : null;
               return (
-                <SketchBox key={v.id} className="mb-4 p-4">
+                <SketchBox key={v.id} className="animate-pf-in mb-4 p-4">
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                     <span className="font-hand text-xl">
                       {v.label}
@@ -862,7 +988,8 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
                   </pre>
                   <p className="mt-2 font-body text-xs text-ink/60">
                     Généré par <strong>{v.providerLabel}</strong>
-                    {v.model ? ` · ${v.model}` : ''} · ~{v.tokens} tokens (estimation)
+                    {v.model ? ` · ${v.model}` : ''} · ~{v.tokens} tokens
+                    {costLabel ? ` · ${costLabel}` : ''}
                   </p>
                   <p className={`mt-1 font-hand text-base ${qualityColor}`}>
                     Qualité : {quality.score}/100
@@ -878,7 +1005,7 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
             })}
 
           {!abMode && draft && (
-            <SketchBox className="mb-4 p-4" color="#3b82a0">
+            <SketchBox className="animate-pf-in mb-4 p-4" color="#3b82a0">
               <div className="mb-2 font-hand text-xl">{draft.label}</div>
               <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border-2 border-ink/20 bg-paper/60 p-3 font-mono text-sm text-ink">
                 {draft.text || '…'}
@@ -957,16 +1084,31 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
               value={intent}
               maxLength={8000}
               onChange={(e) => setIntent(e.target.value)}
-              placeholder="Décris ton besoin…"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                  e.preventDefault();
+                  if (!busy && intent.trim()) void handleGenerate();
+                }
+              }}
+              placeholder="Décris ton besoin…  (Ctrl/Cmd+Entrée pour générer)"
               aria-label="Décris ton besoin"
             />
-            <button
-              className="wonk shrink-0 rounded-lg border-2 border-ink bg-accent px-4 py-2 font-hand text-xl text-ink shadow-sketch transition-transform hover:-translate-y-0.5 disabled:opacity-50"
-              onClick={() => void handleGenerate()}
-              disabled={busy || !intent.trim()}
-            >
-              {busy ? '…' : 'Générer ✶'}
-            </button>
+            {busy ? (
+              <button
+                className="shrink-0 rounded-lg border-2 border-ink bg-paper px-4 py-2 font-hand text-xl text-danger shadow-sketch"
+                onClick={handleStop}
+              >
+                Arrêter ◼
+              </button>
+            ) : (
+              <button
+                className="wonk shrink-0 rounded-lg border-2 border-ink bg-accent px-4 py-2 font-hand text-xl text-ink shadow-sketch transition-transform hover:-translate-y-0.5 disabled:opacity-50"
+                onClick={() => void handleGenerate()}
+                disabled={!intent.trim()}
+              >
+                Générer ✶
+              </button>
+            )}
           </div>
           <label className="mt-2 flex items-center gap-2 font-hand text-sm text-ink/70">
             <input type="checkbox" checked={abMode} onChange={(e) => setAbMode(e.target.checked)} />
@@ -984,11 +1126,15 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
           <div
             className="card-sketch max-h-[90vh] w-full max-w-2xl overflow-y-auto p-4"
             onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label={editingId ? 'Éditer le template' : 'Nouveau template'}
           >
             <h3 className="mb-2 font-hand text-xl">
               {editingId ? 'Éditer le template' : 'Nouveau template'}
             </h3>
             <input
+              ref={nameInputRef}
               className="mb-2 w-full rounded-lg border-2 border-ink bg-paper p-2 font-body"
               placeholder="Nom de la catégorie"
               value={formName}
@@ -1109,8 +1255,22 @@ export function PromptForgeApp({ deps, providers, platformLabel }: PromptForgeAp
         aria-atomic="true"
       >
         {toasts.map((t) => (
-          <div key={t.id} className="card-sketch px-4 py-2 font-hand text-lg text-ink">
-            {t.message}
+          <div
+            key={t.id}
+            className="animate-pf-in card-sketch pointer-events-auto flex items-center gap-3 px-4 py-2 font-hand text-lg text-ink"
+          >
+            <span>{t.message}</span>
+            {t.action && (
+              <button
+                className="font-hand text-base text-accent2 underline"
+                onClick={() => {
+                  t.action?.onClick();
+                  setToasts((prev) => prev.filter((x) => x.id !== t.id));
+                }}
+              >
+                {t.action.label}
+              </button>
+            )}
           </div>
         ))}
       </div>
