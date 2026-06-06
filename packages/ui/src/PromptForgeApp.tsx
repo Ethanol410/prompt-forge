@@ -23,6 +23,9 @@ import {
   scorePrompt,
   estimateCost,
   validateApiKeyFormat,
+  buildLlmChatUrl,
+  LLM_TARGETS,
+  type LlmTarget,
   type ExportFormat,
   type ProviderType,
   type Generation,
@@ -633,11 +636,27 @@ export function PromptForgeApp({
     showToast(`${file.filename} téléchargé ✓`);
   }
 
-  async function handleRate(id: string, rating: 'up' | 'down'): Promise<void> {
-    setVersions((prev) => prev.map((v) => (v.id === id ? { ...v, rating } : v)));
-    await deps.historyStore.setRating(id, rating);
-    deps.analytics.track({ name: 'feedback_given', rating });
-    await refreshHistory();
+  async function handleOpenInLlm(target: LlmTarget, prompt: string): Promise<void> {
+    const info = LLM_TARGETS.find((t) => t.target === target);
+    const label = info?.label ?? target;
+    // On copie toujours : indispensable pour Gemini (pas de pré-remplissage d'URL) et filet de
+    // sécurité si l'URL tronque un prompt long pour ChatGPT/Claude.
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(prompt);
+      copied = true;
+    } catch {
+      /* presse-papier indisponible : on ouvre quand même la discussion */
+    }
+    window.open(buildLlmChatUrl(target, prompt), '_blank', 'noopener,noreferrer');
+    deps.analytics.track({ name: 'prompt_exported', target });
+    showToast(
+      info?.prefills
+        ? `Ouverture de ${label}…`
+        : copied
+          ? `Prompt copié — colle-le dans ${label} (Ctrl+V)`
+          : `Ouverture de ${label} — copie le prompt manuellement`,
+    );
   }
 
   async function handleClearAll(): Promise<void> {
@@ -928,7 +947,7 @@ export function PromptForgeApp({
                   className="mt-2 w-full rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm"
                   onClick={() => void handleAbChoose('raw')}
                 >
-                  Choisir le brut 👍
+                  Choisir le brut ✓
                 </button>
               </SketchBox>
               <SketchBox className="p-4" color="#e8743b">
@@ -941,7 +960,7 @@ export function PromptForgeApp({
                   onClick={() => void handleAbChoose('optimized')}
                   disabled={!abOptimized}
                 >
-                  Choisir l'optimisé 👍
+                  Choisir l'optimisé ✓
                 </button>
               </SketchBox>
             </section>
@@ -997,26 +1016,23 @@ export function PromptForgeApp({
                       >
                         .txt
                       </button>
-                      <button
-                        className={`rounded-lg border-2 border-ink px-2 py-1 font-hand text-base shadow-sketch-sm ${
-                          v.rating === 'up' ? 'bg-success text-paper' : 'bg-paper'
-                        }`}
-                        onClick={() => void handleRate(v.id, 'up')}
-                        aria-label="pouce en haut"
-                        aria-pressed={v.rating === 'up'}
-                      >
-                        👍
-                      </button>
-                      <button
-                        className={`rounded-lg border-2 border-ink px-2 py-1 font-hand text-base shadow-sketch-sm ${
-                          v.rating === 'down' ? 'bg-danger text-paper' : 'bg-paper'
-                        }`}
-                        onClick={() => void handleRate(v.id, 'down')}
-                        aria-label="pouce en bas"
-                        aria-pressed={v.rating === 'down'}
-                      >
-                        👎
-                      </button>
+                      <span className="ml-1 self-center font-hand text-base text-ink/50">
+                        Ouvrir dans →
+                      </span>
+                      {LLM_TARGETS.map((t) => (
+                        <button
+                          key={t.target}
+                          className="rounded-lg border-2 border-ink bg-accent2 px-2 py-1 font-hand text-base text-paper shadow-sketch-sm"
+                          onClick={() => void handleOpenInLlm(t.target, v.prompt)}
+                          title={
+                            t.prefills
+                              ? `Ouvre une nouvelle discussion ${t.label} avec ce prompt`
+                              : `Copie le prompt et ouvre ${t.label} (colle avec Ctrl+V)`
+                          }
+                        >
+                          {t.label}
+                        </button>
+                      ))}
                     </div>
                   </div>
                   <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border-2 border-ink/20 bg-paper/60 p-3 font-mono text-sm text-ink">

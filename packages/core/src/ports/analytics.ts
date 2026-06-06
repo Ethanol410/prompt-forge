@@ -8,7 +8,7 @@ import type { ProviderType } from '../models/provider-config.js';
 export type AnalyticsEvent =
   | { readonly name: 'prompt_generated'; readonly category: string; readonly provider: ProviderType }
   | { readonly name: 'prompt_copied'; readonly category: string }
-  | { readonly name: 'feedback_given'; readonly rating: 'up' | 'down' }
+  | { readonly name: 'prompt_exported'; readonly target: 'chatgpt' | 'claude' | 'gemini' }
   | { readonly name: 'history_opened' }
   | { readonly name: 'provider_configured'; readonly provider: ProviderType }
   | { readonly name: 'ab_compared'; readonly chosen: 'raw' | 'optimized' };
