@@ -1,5 +1,6 @@
 import type { ReactElement, ReactNode } from 'react';
 import { SketchBox, Doodle, HandDrawnDefs } from '@promptforge/ui';
+import { SYSTEM_CATEGORIES } from '@promptforge/core';
 
 export interface LandingProps {
   /** Lance l'app web (navigue vers /app). */
@@ -12,19 +13,20 @@ export interface LandingProps {
   readonly version: string;
 }
 
-const CATEGORIES = ['PRD technique', 'Code / Code review', 'Email / Comms', 'Design / UX'] as const;
+/** Noms des catégories système, dérivés du cœur (reste en phase quand on en ajoute). */
+const CATEGORIES: readonly string[] = SYSTEM_CATEGORIES.map((c) => c.category.name);
 
 const STEPS: ReadonlyArray<{ readonly n: string; readonly title: string; readonly body: string }> = [
-  { n: '1', title: 'Choisis une catégorie', body: 'PRD, code, email, design… le squelette s’adapte à ta tâche.' },
-  { n: '2', title: 'Décris ton besoin', body: 'En langage naturel, sans connaître le « prompt engineering ».' },
-  { n: '3', title: 'Copie le prompt', body: 'Un prompt structuré, prêt à coller dans l’outil de ton choix.' },
+  { n: '1', title: 'Choisis une catégorie', body: 'PRD, code, email, design, réseaux sociaux… le squelette s’adapte à ta tâche.' },
+  { n: '2', title: 'Décris ton besoin', body: 'En langage naturel (ou clique un exemple), sans connaître le « prompt engineering ».' },
+  { n: '3', title: 'Ouvre-le où tu veux', body: 'Un prompt structuré, à ouvrir en 1 clic dans ChatGPT, Claude ou Gemini — ou à copier.' },
 ];
 
 const VALUE_PROPS: ReadonlyArray<{ readonly icon: string; readonly title: string; readonly body: string }> = [
   {
     icon: '✦',
     title: 'Des prompts qui marchent',
-    body: 'Template structurant + une passe d’optimisation par le modèle. Rôle, contexte, contraintes vérifiables, format de sortie.',
+    body: 'Template structurant + optimisation par le modèle. Puis affine-les ou clique « Améliorer encore » : le modèle critique et réécrit.',
   },
   {
     icon: '🔒',
@@ -158,7 +160,7 @@ export function Landing({ onLaunch, downloadUrl, releasesUrl, version }: Landing
 
         {/* Catégories */}
         <section className="py-6">
-          <h2 className="font-hand text-3xl">4 catégories prêtes à l’emploi</h2>
+          <h2 className="font-hand text-3xl">{CATEGORIES.length} catégories prêtes à l’emploi</h2>
           <div className="mt-4 flex flex-wrap gap-3">
             {CATEGORIES.map((c) => (
               <span

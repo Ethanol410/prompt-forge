@@ -30,12 +30,14 @@ vérifiables**, format de sortie — sans que tu aies à les connaître.
 
 ## 🚀 Fonctionnalités
 
-- **4 catégories** prêtes à l'emploi : PRD technique · Code / Code review · Email / Comms · Design / UX
+- **8 catégories** prêtes à l'emploi : PRD technique · Code / Code review · Email / Comms · Design / UX · Réseaux sociaux · Résumé & synthèse · Apprentissage & explication · Idéation & brainstorming
 - **Génération hybride** : template structurant + une passe d'optimisation par le modèle
-- **Affinage guidé** (plus court / technique / formel) et **comparaison A/B** brut ↔ optimisé
-- **Templates personnalisés** avec **variables**, **score qualité** heuristique
-- **Historique local**, copie en un clic, **export** (.md / .txt / prêt pour Claude Code)
-- **Streaming** token-par-token, **estimation de coût**, raccourci `Ctrl/Cmd+Entrée`, bouton **Stop**
+- **Affinage** : presets (plus court / technique / formel) **+ consigne libre**, et **« Améliorer encore »** (le modèle critique puis réécrit) avec **diff** entre versions
+- **Onboarding** guidé au 1er lancement + **exemples cliquables** par catégorie
+- **Ouvre le prompt dans ChatGPT / Claude / Gemini** en un clic, ou **export** (.md / .txt)
+- **Templates personnalisés** (éditeur simplifié) avec **variables**, **import / export `.json`**, **score qualité**
+- **Historique local** avec **recherche, filtre et favoris** ; copie en un clic ; **comparaison A/B**
+- **Streaming** token-par-token, **estimation de coût**, validation de clé, raccourci `Ctrl/Cmd+Entrée`, bouton **Stop**
 
 ## 🔌 Providers
 
@@ -62,7 +64,8 @@ Invariants non négociables :
 - **Web** : clés chiffrées en **AES-GCM 256 (WebCrypto)** avant IndexedDB — jamais en clair, jamais
   dans `localStorage`. **CSP stricte**.
 - **Modèle local = 100 % hors-ligne**, aucune requête externe.
-- Analytics : événements anonymisés uniquement, jamais de contenu utilisateur.
+- Analytics (web) : **PostHog EU**, événements anonymes uniquement (events-only, pas d'autocapture
+  ni d'enregistrement de session), **jamais de contenu utilisateur**, opt-out possible.
 
 ## 💾 Télécharger (desktop)
 
