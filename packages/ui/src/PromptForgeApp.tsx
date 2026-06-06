@@ -207,7 +207,6 @@ export function PromptForgeApp({
 
   const reducedMotion = usePrefersReducedMotion();
   const titleRef = useRef<HTMLHeadingElement>(null);
-  const categoryRef = useRef<HTMLDivElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -296,22 +295,6 @@ export function PromptForgeApp({
     annotation.show();
     return () => annotation.remove();
   }, [reducedMotion]);
-
-  // rough-notation : entourer la catégorie sélectionnée (re-trace au changement).
-  useEffect(() => {
-    const el = categoryRef.current;
-    if (!el) return;
-    const annotation = annotate(el, {
-      type: 'box',
-      color: '#3b82a0',
-      strokeWidth: 1.5,
-      padding: 6,
-      animate: !reducedMotion,
-      animationDuration: reducedMotion ? 0 : 600,
-    });
-    annotation.show();
-    return () => annotation.remove();
-  }, [categoryId, reducedMotion]);
 
   // Réinitialise les valeurs des variables aux défauts quand on change de catégorie (F-C3).
   useEffect(() => {
@@ -1154,7 +1137,7 @@ export function PromptForgeApp({
             <div>
               <label className="mb-1 block font-hand text-base">Catégorie</label>
               <div className="flex items-center gap-2">
-                <div ref={categoryRef} className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1">
                   <select
                     className="w-full rounded-lg border-2 border-ink bg-paper p-2 font-body"
                     value={categoryId}
