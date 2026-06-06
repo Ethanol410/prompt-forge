@@ -23,6 +23,10 @@ export class PostHogAnalytics implements Analytics {
       capture_pageview: false,
       capture_pageleave: false,
       disable_session_recording: true,
+      disable_surveys: true,
+      // Désactive flags / remote config → aucun script externe chargé (CSP stricte préservée).
+      advanced_disable_feature_flags: true,
+      advanced_disable_flags: true,
       // L'app n'envoie QUE les événements explicites définis ci-dessous.
     });
     this.ready = true;
