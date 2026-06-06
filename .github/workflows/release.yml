@@ -1,0 +1,52 @@
+name: Release desktop
+
+# Déclenché en poussant un tag de version (ex. v0.1.2), ou manuellement depuis l'onglet Actions.
+# Build l'app desktop (Windows) et crée la release GitHub avec les .exe/.msi.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag de version à publier (ex. v0.1.2). Doit exister ou sera créé.'
+        required: true
+
+permissions:
+  contents: write # nécessaire pour créer la release et y attacher les binaires
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build & publish release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          tagName: ${{ github.event.inputs.tag || github.ref_name }}
+          releaseName: 'PromptForge ${{ github.event.inputs.tag || github.ref_name }}'
+          releaseBody: 'Installeurs Windows (non signés) générés automatiquement. SmartScreen → « Informations complémentaires → Exécuter quand même ».'
+          releaseDraft: false
+          prerelease: false
