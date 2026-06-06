@@ -11,6 +11,7 @@ interface Row {
   readonly model_name: string;
   readonly token_estimate: number | null;
   readonly rating: string | null;
+  readonly favorite: number | null;
   readonly created_at: string;
 }
 
@@ -25,6 +26,7 @@ function toGeneration(row: Row): Generation {
     modelName: row.model_name,
     tokenEstimate: row.token_estimate,
     rating: (row.rating ?? null) as Rating,
+    favorite: row.favorite === 1,
     createdAt: row.created_at,
   };
 }
@@ -35,8 +37,8 @@ export class SqliteHistoryStore implements HistoryStore {
     const db = await getDb();
     await db.execute(
       `INSERT OR REPLACE INTO generations
-        (id, category_id, template_version, user_intent, output_prompt, provider_used, model_name, token_estimate, rating, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        (id, category_id, template_version, user_intent, output_prompt, provider_used, model_name, token_estimate, rating, favorite, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [
         generation.id,
         generation.categoryId,
@@ -47,6 +49,7 @@ export class SqliteHistoryStore implements HistoryStore {
         generation.modelName,
         generation.tokenEstimate,
         generation.rating,
+        generation.favorite ? 1 : 0,
         generation.createdAt,
       ],
     );
@@ -67,6 +70,11 @@ export class SqliteHistoryStore implements HistoryStore {
   async setRating(id: string, rating: Rating): Promise<void> {
     const db = await getDb();
     await db.execute('UPDATE generations SET rating = $1 WHERE id = $2', [rating, id]);
+  }
+
+  async setFavorite(id: string, favorite: boolean): Promise<void> {
+    const db = await getDb();
+    await db.execute('UPDATE generations SET favorite = $1 WHERE id = $2', [favorite ? 1 : 0, id]);
   }
 
   async delete(id: string): Promise<void> {

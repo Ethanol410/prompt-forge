@@ -29,6 +29,7 @@ const DESKTOP_PROVIDERS: readonly ProviderChoice[] = [
     isLocal: false,
     defaultModel: 'claude-3-5-sonnet-latest',
     defaultBaseUrl: '',
+    helpUrl: 'https://console.anthropic.com/settings/keys',
   },
   {
     type: 'openai',
@@ -37,6 +38,7 @@ const DESKTOP_PROVIDERS: readonly ProviderChoice[] = [
     isLocal: false,
     defaultModel: 'gpt-4o-mini',
     defaultBaseUrl: '',
+    helpUrl: 'https://platform.openai.com/api-keys',
   },
   {
     type: 'ollama',
@@ -45,6 +47,7 @@ const DESKTOP_PROVIDERS: readonly ProviderChoice[] = [
     isLocal: true,
     defaultModel: 'llama3.1',
     defaultBaseUrl: 'http://localhost:11434',
+    helpUrl: 'https://ollama.com/download',
   },
   {
     type: 'lmstudio',
@@ -53,6 +56,7 @@ const DESKTOP_PROVIDERS: readonly ProviderChoice[] = [
     isLocal: true,
     defaultModel: 'local-model',
     defaultBaseUrl: 'http://localhost:1234',
+    helpUrl: 'https://lmstudio.ai',
   },
   {
     type: 'openrouter',
@@ -61,6 +65,7 @@ const DESKTOP_PROVIDERS: readonly ProviderChoice[] = [
     isLocal: false,
     defaultModel: 'openai/gpt-4o-mini',
     defaultBaseUrl: '',
+    helpUrl: 'https://openrouter.ai/keys',
   },
   {
     type: 'mistral',
@@ -69,6 +74,7 @@ const DESKTOP_PROVIDERS: readonly ProviderChoice[] = [
     isLocal: false,
     defaultModel: 'mistral-small-latest',
     defaultBaseUrl: '',
+    helpUrl: 'https://console.mistral.ai/api-keys',
   },
   {
     type: 'gemini',
@@ -77,6 +83,7 @@ const DESKTOP_PROVIDERS: readonly ProviderChoice[] = [
     isLocal: false,
     defaultModel: 'gemini-1.5-flash',
     defaultBaseUrl: '',
+    helpUrl: 'https://aistudio.google.com/app/apikey',
   },
 ];
 

@@ -17,5 +17,7 @@ export interface Generation {
   readonly modelName: string;
   readonly tokenEstimate: number | null;
   readonly rating: Rating;
+  /** Épinglé par l'utilisateur (favori). Optionnel : absent = non favori (rétro-compatible). */
+  readonly favorite?: boolean;
   readonly createdAt: string;
 }

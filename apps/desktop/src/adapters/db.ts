@@ -17,9 +17,16 @@ export function getDb(): Promise<Database> {
         model_name TEXT NOT NULL,
         token_estimate INTEGER,
         rating TEXT,
+        favorite INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL
       )`,
     );
+    // Migration des bases existantes : ajoute la colonne `favorite` si absente (ignore si déjà là).
+    try {
+      await db.execute('ALTER TABLE generations ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0');
+    } catch {
+      /* colonne déjà présente */
+    }
     await db.execute(
       `CREATE TABLE IF NOT EXISTS custom_categories (
         id TEXT PRIMARY KEY,

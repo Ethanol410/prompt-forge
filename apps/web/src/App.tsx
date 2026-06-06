@@ -1,13 +1,16 @@
 import type { ReactElement } from 'react';
 import { PromptForgeApp, type ProviderChoice, type AppDeps } from '@promptforge/ui';
-import { NoopAnalytics } from '@promptforge/core';
 import { WebCryptoSecretStore } from './adapters/webcrypto-secret-store.js';
 import { getOrCreateMasterKey } from './adapters/key-vault.js';
 import { FetchHttpClient } from './adapters/fetch-http-client.js';
 import { IndexedDbHistoryStore } from './adapters/indexeddb-history-store.js';
 import { IndexedDbTemplateStore } from './adapters/indexeddb-template-store.js';
 import { IndexedDbPrefsStore } from './adapters/indexeddb-prefs-store.js';
+import { PostHogAnalytics } from './adapters/posthog-analytics.js';
 import { DESKTOP_DOWNLOAD_URL } from './config.js';
+
+/** Analytics PostHog (events anonymes only). Exposée pour le bandeau de consentement. */
+export const analytics = new PostHogAnalytics();
 
 // Adapters web injectés (BYOK direct, aucun backend éditeur).
 const deps: AppDeps = {
@@ -16,7 +19,7 @@ const deps: AppDeps = {
   historyStore: new IndexedDbHistoryStore(),
   templateStore: new IndexedDbTemplateStore(),
   prefsStore: new IndexedDbPrefsStore(),
-  analytics: new NoopAnalytics(),
+  analytics,
 };
 
 // Sur web : Anthropic (cloud) + modèles locaux. OpenAI affiché mais désactivé (D2 — CORS).
@@ -28,6 +31,7 @@ const WEB_PROVIDERS: readonly ProviderChoice[] = [
     isLocal: false,
     defaultModel: 'claude-3-5-sonnet-latest',
     defaultBaseUrl: '',
+    helpUrl: 'https://console.anthropic.com/settings/keys',
   },
   {
     type: 'ollama',
@@ -36,6 +40,7 @@ const WEB_PROVIDERS: readonly ProviderChoice[] = [
     isLocal: true,
     defaultModel: 'llama3.1',
     defaultBaseUrl: 'http://localhost:11434',
+    helpUrl: 'https://ollama.com/download',
   },
   {
     type: 'lmstudio',
@@ -44,6 +49,7 @@ const WEB_PROVIDERS: readonly ProviderChoice[] = [
     isLocal: true,
     defaultModel: 'local-model',
     defaultBaseUrl: 'http://localhost:1234',
+    helpUrl: 'https://lmstudio.ai',
   },
   {
     type: 'openrouter',
@@ -52,6 +58,7 @@ const WEB_PROVIDERS: readonly ProviderChoice[] = [
     isLocal: false,
     defaultModel: 'openai/gpt-4o-mini',
     defaultBaseUrl: '',
+    helpUrl: 'https://openrouter.ai/keys',
   },
   // CORS bloqué pour ces providers en navigateur (D2) → desktop-only.
   {
@@ -63,6 +70,7 @@ const WEB_PROVIDERS: readonly ProviderChoice[] = [
     defaultBaseUrl: '',
     disabled: true,
     disabledNote: 'disponible sur desktop',
+    helpUrl: 'https://platform.openai.com/api-keys',
   },
   {
     type: 'mistral',
@@ -73,6 +81,7 @@ const WEB_PROVIDERS: readonly ProviderChoice[] = [
     defaultBaseUrl: '',
     disabled: true,
     disabledNote: 'disponible sur desktop',
+    helpUrl: 'https://console.mistral.ai/api-keys',
   },
   {
     type: 'gemini',
@@ -83,6 +92,7 @@ const WEB_PROVIDERS: readonly ProviderChoice[] = [
     defaultBaseUrl: '',
     disabled: true,
     disabledNote: 'disponible sur desktop',
+    helpUrl: 'https://aistudio.google.com/app/apikey',
   },
 ];
 

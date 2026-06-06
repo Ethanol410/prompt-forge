@@ -23,6 +23,12 @@ export class IndexedDbHistoryStore implements HistoryStore {
     await idbPut(STORE_HISTORY, { ...existing, rating });
   }
 
+  async setFavorite(id: string, favorite: boolean): Promise<void> {
+    const existing = await this.get(id);
+    if (!existing) return;
+    await idbPut(STORE_HISTORY, { ...existing, favorite });
+  }
+
   async delete(id: string): Promise<void> {
     await idbDelete(STORE_HISTORY, id);
   }
