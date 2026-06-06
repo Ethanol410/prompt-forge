@@ -128,6 +128,10 @@ npm run test:e2e    # Playwright (web)
 
 Critère de fin d'une tâche : **typecheck + lint + tests** au vert.
 
+## 🚀 Publier une version
+
+Les releases desktop sont automatisées (GitHub Actions + tag `v*`). Voir **[RELEASING.md](./RELEASING.md)**.
+
 ## 📄 Licence
 
 À définir.
