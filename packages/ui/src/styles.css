@@ -77,6 +77,20 @@
   animation: pf-fade-in 220ms ease-out;
 }
 
+/* Flottement décoratif léger (doodles). Désactivé par la media reduced-motion plus bas. */
+@keyframes pf-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+.animate-float {
+  animation: pf-float 3.5s ease-in-out infinite;
+}
+
 /* Retour visuel au clic : léger enfoncement « dans l'ombre » des boutons. */
 button:not(:disabled) {
   transition:

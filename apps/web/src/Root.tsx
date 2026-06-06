@@ -2,7 +2,12 @@ import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { App } from './App.js';
 import { Landing } from './landing/Landing.js';
 import { ConsentBanner } from './ConsentBanner.js';
-import { DESKTOP_DOWNLOAD_URL, DESKTOP_RELEASES_URL, DESKTOP_VERSION } from './config.js';
+import {
+  DESKTOP_DOWNLOAD_URL,
+  DESKTOP_RELEASES_URL,
+  DESKTOP_VERSION,
+  GITHUB_REPO_URL,
+} from './config.js';
 
 const APP_PATH = '/app';
 
@@ -35,6 +40,7 @@ export function Root(): ReactElement {
         onLaunch={() => navigate(APP_PATH)}
         downloadUrl={DESKTOP_DOWNLOAD_URL}
         releasesUrl={DESKTOP_RELEASES_URL}
+        repoUrl={GITHUB_REPO_URL}
         version={DESKTOP_VERSION}
       />
     );
