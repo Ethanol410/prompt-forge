@@ -13,6 +13,9 @@ import {
   createProviderAdapter,
   optimizeStream,
   refineStream,
+  critiqueStream,
+  improvementInstruction,
+  diffWords,
   REFINEMENTS,
   buildBasePrompt,
   buildExport,
@@ -76,6 +79,8 @@ interface PromptVersion {
   readonly providerLabel: string;
   readonly model: string;
   readonly rating: 'up' | 'down' | null;
+  /** Critique (faiblesses) produite par « Améliorer encore », affichée sur la version réécrite. */
+  readonly critique?: string;
 }
 
 interface Toast {
@@ -206,6 +211,10 @@ export function PromptForgeApp({
   const [abMode, setAbMode] = useState(false);
   const [abRaw, setAbRaw] = useState('');
   const [abOptimized, setAbOptimized] = useState('');
+
+  // Affinage libre + diff entre versions.
+  const [freeRefine, setFreeRefine] = useState('');
+  const [diffFor, setDiffFor] = useState<string | null>(null);
 
   useEffect(() => {
     void refreshHistory();
@@ -542,7 +551,11 @@ export function PromptForgeApp({
   }
 
   /** Affinage : AJOUTE une nouvelle version sous la dernière (on garde la trace, on n'efface rien). */
-  async function handleRefine(instruction: string, label: string): Promise<void> {
+  async function handleRefine(
+    instruction: string,
+    label: string,
+    kind: 'preset' | 'free' = 'preset',
+  ): Promise<void> {
     const last = versions[versions.length - 1];
     if (!last) return;
     setError(null);
@@ -614,6 +627,116 @@ export function PromptForgeApp({
       setVersions((prev) => [...prev, version]);
       setDraft(null);
       setGenStatus('done');
+      deps.analytics.track({ name: 'prompt_refined', kind });
+    } finally {
+      setBusy(false);
+      abortRef.current = null;
+    }
+  }
+
+  /** Affinage avec une consigne libre saisie par l'utilisateur. */
+  async function handleRefineFree(): Promise<void> {
+    const instruction = freeRefine.trim();
+    if (!instruction || busy) return;
+    setFreeRefine('');
+    await handleRefine(instruction, 'Affiné', 'free');
+  }
+
+  /**
+   * « Améliorer encore » (2 appels) : 1) le modèle critique le dernier prompt, 2) il le réécrit
+   * en corrigeant les faiblesses. La critique est conservée et affichée sur la version produite.
+   */
+  async function handleImproveAgain(): Promise<void> {
+    const last = versions[versions.length - 1];
+    if (!last || busy) return;
+    setError(null);
+
+    let apiKey: string | undefined;
+    if (provider.needsKey) {
+      apiKey = (await deps.secretStore.get(secretRef(provider.type))) ?? undefined;
+      if (!apiKey) {
+        setError(`Renseigne et enregistre ta clé ${provider.label} ci-dessus.`);
+        return;
+      }
+    }
+
+    setBusy(true);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const adapter = createProviderAdapter(provider.type, deps.httpClient);
+    const options = {
+      model,
+      ...(apiKey ? { apiKey } : {}),
+      ...(provider.isLocal && baseUrl ? { baseUrl } : {}),
+      signal: controller.signal,
+    };
+    const current = last.prompt;
+    let critique = '';
+    let aborted = false;
+    try {
+      // Étape 1 : critique.
+      setGenStatus('thinking');
+      setDraft({ label: 'Analyse du prompt…', text: '' });
+      try {
+        for await (const chunk of critiqueStream({ current, adapter, options })) {
+          critique += chunk;
+          setGenStatus('writing');
+          setDraft({ label: 'Analyse du prompt…', text: critique });
+        }
+      } catch (cause) {
+        if (controller.signal.aborted) aborted = true;
+        else setError(`${describeProviderError(cause)} (amélioration indisponible)`);
+      }
+      if (aborted || critique.trim().length === 0) {
+        setDraft(null);
+        setGenStatus('idle');
+        return;
+      }
+
+      // Étape 2 : réécriture en corrigeant les faiblesses.
+      let accumulated = '';
+      let fallback = false;
+      setGenStatus('thinking');
+      setDraft({ label: 'Amélioré', text: '' });
+      try {
+        for await (const chunk of refineStream({
+          current,
+          instruction: improvementInstruction(critique),
+          adapter,
+          options,
+        })) {
+          accumulated += chunk;
+          setGenStatus('writing');
+          setDraft({ label: 'Amélioré', text: accumulated });
+        }
+        if (!accumulated.trim()) {
+          accumulated = current;
+          fallback = true;
+        }
+      } catch (cause) {
+        if (controller.signal.aborted) aborted = true;
+        else {
+          accumulated = current;
+          fallback = true;
+          setError(`${describeProviderError(cause)} (amélioration indisponible)`);
+        }
+      }
+      if (aborted && accumulated.trim().length === 0) {
+        setDraft(null);
+        setGenStatus('idle');
+        return;
+      }
+
+      const version = await commitVersion(
+        aborted ? 'Amélioré (interrompu)' : 'Amélioré',
+        accumulated,
+        fallback,
+        `[amélioré] ${intent.trim()}`,
+      );
+      setVersions((prev) => [...prev, { ...version, critique: critique.trim() }]);
+      setDraft(null);
+      setGenStatus('done');
+      deps.analytics.track({ name: 'prompt_refined', kind: 'improve' });
     } finally {
       setBusy(false);
       abortRef.current = null;
@@ -1032,6 +1155,16 @@ export function PromptForgeApp({
                       >
                         .txt
                       </button>
+                      {index > 0 && (
+                        <button
+                          className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm"
+                          onClick={() => setDiffFor((cur) => (cur === v.id ? null : v.id))}
+                          title="Voir les changements par rapport à la version précédente"
+                          aria-pressed={diffFor === v.id}
+                        >
+                          {diffFor === v.id ? 'Diff ✓' : 'Diff'}
+                        </button>
+                      )}
                       <span className="ml-1 self-center font-hand text-base text-ink/50">
                         Ouvrir dans →
                       </span>
@@ -1052,7 +1185,22 @@ export function PromptForgeApp({
                     </div>
                   </div>
                   <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border-2 border-ink/20 bg-paper/60 p-3 font-mono text-sm text-ink">
-                    {v.prompt}
+                    {diffFor === v.id && index > 0
+                      ? diffWords(versions[index - 1]!.prompt, v.prompt).map((seg, k) => (
+                          <span
+                            key={k}
+                            className={
+                              seg.op === 'added'
+                                ? 'bg-success/30'
+                                : seg.op === 'removed'
+                                  ? 'bg-danger/30 line-through'
+                                  : ''
+                            }
+                          >
+                            {seg.text}
+                          </span>
+                        ))
+                      : v.prompt}
                   </pre>
                   <p className="mt-2 font-body text-xs text-ink/60">
                     Généré par <strong>{v.providerLabel}</strong>
@@ -1068,6 +1216,16 @@ export function PromptForgeApp({
                       </span>
                     )}
                   </p>
+                  {v.critique && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer font-hand text-base text-ink/70">
+                        Critique (faiblesses corrigées) ▾
+                      </summary>
+                      <pre className="mt-1 whitespace-pre-wrap rounded-lg border-2 border-ink/15 bg-paper/60 p-2 font-body text-xs text-ink/80">
+                        {v.critique}
+                      </pre>
+                    </details>
+                  )}
                 </SketchBox>
               );
             })}
@@ -1107,6 +1265,38 @@ export function PromptForgeApp({
               >
                 Plus formel
               </button>
+              <button
+                className="rounded-lg border-2 border-ink bg-highlight px-2 py-1 font-hand text-base shadow-sketch-sm disabled:opacity-40"
+                onClick={() => void handleImproveAgain()}
+                disabled={busy}
+                title="Le modèle critique le prompt puis le réécrit en corrigeant ses faiblesses (2 appels)"
+              >
+                ✦ Améliorer encore
+              </button>
+              <form
+                className="flex w-full items-center gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void handleRefineFree();
+                }}
+              >
+                <input
+                  type="text"
+                  value={freeRefine}
+                  onChange={(e) => setFreeRefine(e.target.value)}
+                  placeholder="affiner avec mes mots… (ex. « ajoute des exemples »)"
+                  aria-label="affiner avec mes mots"
+                  className="min-w-0 flex-1 rounded-lg border-2 border-ink bg-paper px-3 py-1 font-body text-sm"
+                  disabled={busy}
+                />
+                <button
+                  type="submit"
+                  className="rounded-lg border-2 border-ink bg-paper px-2 py-1 font-hand text-base shadow-sketch-sm disabled:opacity-40"
+                  disabled={busy || freeRefine.trim().length === 0}
+                >
+                  Affiner
+                </button>
+              </form>
             </div>
           )}
         </div>
