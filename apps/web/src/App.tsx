@@ -102,7 +102,7 @@ function isRemoteHttps(): boolean {
 
 const RESOLVED_WEB_PROVIDERS: readonly ProviderChoice[] = isRemoteHttps()
   ? WEB_PROVIDERS.map((p) =>
-      p.isLocal ? { ...p, disabled: true, disabledNote: 'app desktop ou dev local' } : p,
+      p.isLocal ? { ...p, disabled: true, disabledNote: 'disponible sur desktop' } : p,
     )
   : WEB_PROVIDERS;
 
