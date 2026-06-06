@@ -11,7 +11,13 @@ export type AnalyticsEvent =
   | { readonly name: 'prompt_exported'; readonly target: 'chatgpt' | 'claude' | 'gemini' }
   | { readonly name: 'history_opened' }
   | { readonly name: 'provider_configured'; readonly provider: ProviderType }
-  | { readonly name: 'ab_compared'; readonly chosen: 'raw' | 'optimized' };
+  | { readonly name: 'ab_compared'; readonly chosen: 'raw' | 'optimized' }
+  | { readonly name: 'onboarding_completed' }
+  | { readonly name: 'prompt_refined'; readonly kind: 'preset' | 'free' | 'improve' }
+  | { readonly name: 'satisfaction'; readonly helpful: boolean }
+  | { readonly name: 'template_imported' }
+  | { readonly name: 'template_exported' }
+  | { readonly name: 'key_validated'; readonly ok: boolean };
 
 export interface Analytics {
   /** Enregistre un événement. No-op si l'utilisateur n'a pas opté (opt-out par défaut). */

@@ -151,3 +151,35 @@ Tu es un designer produit / UX senior. Produis un brief créatif riche et exploi
 export function getSystemCategoryBySlug(slug: string): SystemCategory | undefined {
   return SYSTEM_CATEGORIES.find((c) => c.category.slug === slug);
 }
+
+/**
+ * Exemples d'intention par catégorie système (chips de démarrage, F-onboarding).
+ * Aident l'utilisateur (surtout non-technique) à savoir quoi écrire. Cliquer = pré-remplir.
+ */
+export const SYSTEM_CATEGORY_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
+  'prd-technique': [
+    'Une app mobile de suivi de dépenses partagées entre colocataires',
+    'Un module de notifications push multi-canal pour un SaaS B2B',
+    'Une marketplace de cours en ligne avec paiement et avis',
+  ],
+  code: [
+    'Une fonction TypeScript qui valide et normalise un numéro de téléphone FR',
+    'Faire la revue de ce composant React pour la perf et l’accessibilité',
+    'Un script Python qui dédoublonne un CSV et exporte un rapport',
+  ],
+  'email-comms': [
+    'Relancer un prospect B2B resté silencieux après une démo',
+    'Annoncer une hausse de prix à mes clients en limitant le churn',
+    'Email de bienvenue chaleureux pour de nouveaux inscrits',
+  ],
+  'design-ux': [
+    'Refondre l’écran d’onboarding d’une app de méditation',
+    'Un design system minimaliste pour un dashboard analytique',
+    'Améliorer le tunnel de paiement d’un site e-commerce',
+  ],
+};
+
+/** Exemples d'intention pour un slug de catégorie (liste vide si inconnu / template perso). */
+export function getCategoryExamples(slug: string): readonly string[] {
+  return SYSTEM_CATEGORY_EXAMPLES[slug] ?? [];
+}

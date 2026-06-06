@@ -7,8 +7,17 @@ export {
 } from './template-engine.js';
 export { optimizeStream, generateHybrid } from './generate.js';
 export { estimateTokens } from './token.js';
-export { refineStream, refineHybrid, REFINEMENTS } from './refine.js';
-export type { RefineParams, RefinementKey } from './refine.js';
+export {
+  refineStream,
+  refineHybrid,
+  REFINEMENTS,
+  critiqueStream,
+  buildCritiqueMetaPrompt,
+  improvementInstruction,
+} from './refine.js';
+export type { RefineParams, RefinementKey, CritiqueParams } from './refine.js';
+export { diffWords } from './diff.js';
+export type { DiffSegment, DiffOp } from './diff.js';
 export { scorePrompt } from './score.js';
 export type { PromptScore, PromptCheck } from './score.js';
 export { estimateCost } from './cost.js';

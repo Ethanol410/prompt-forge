@@ -34,6 +34,37 @@ export async function* refineStream(params: RefineParams): AsyncIterable<string>
   yield* params.adapter.generate(metaPrompt, params.options);
 }
 
+const CRITIQUE_META =
+  'Tu es un expert en prompt engineering. Analyse le prompt ci-dessous et liste ses faiblesses ' +
+  'les plus importantes sous forme de 3 à 6 puces courtes et actionnables (rôle, contexte, étapes, ' +
+  'contraintes vérifiables, format de sortie, gestion des ambiguïtés). ' +
+  'Réponds UNIQUEMENT avec la liste à puces, sans préambule ni conclusion.';
+
+/** Construit le méta-prompt d'auto-critique (étape 1 de « Améliorer encore »). */
+export function buildCritiqueMetaPrompt(current: string): string {
+  return `${CRITIQUE_META}\n\n--- PROMPT À ANALYSER ---\n${current}`;
+}
+
+export interface CritiqueParams {
+  readonly current: string;
+  readonly adapter: ProviderAdapter;
+  readonly options: GenerateOptions;
+}
+
+/** Étape 1 de « Améliorer encore » : streame une critique (liste de faiblesses) du prompt. */
+export async function* critiqueStream(params: CritiqueParams): AsyncIterable<string> {
+  yield* params.adapter.generate(buildCritiqueMetaPrompt(params.current), params.options);
+}
+
+/** Instruction de réécriture (étape 2) à passer à `refineStream` à partir d'une critique. */
+export function improvementInstruction(critique: string): string {
+  return (
+    'Améliore le prompt en corrigeant spécifiquement les faiblesses identifiées ci-dessous, ' +
+    'tout en restant fidèle à son intention :\n' +
+    critique.trim()
+  );
+}
+
 /**
  * Affinage avec garde-fou : en cas d'échec LLM ou de sortie vide, retourne le prompt courant
  * inchangé (l'utilisateur ne perd jamais son prompt).
