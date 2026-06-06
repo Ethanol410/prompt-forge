@@ -103,6 +103,8 @@ export interface ProviderChoice {
   /** Si vrai, l'option est affichée mais non sélectionnable (ex. OpenAI sur web — D2). */
   readonly disabled?: boolean;
   readonly disabledNote?: string;
+  /** Lien d'aide (obtenir une clé / installer le runtime local), affiché sous les champs. */
+  readonly helpUrl?: string;
 }
 
 export interface PromptForgeAppProps {
