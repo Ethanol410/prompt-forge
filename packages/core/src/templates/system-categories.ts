@@ -145,6 +145,93 @@ Tu es un designer produit / UX senior. Produis un brief créatif riche et exploi
 `,
     "À partir de l'intention de l'utilisateur et de la structure de référence, rédige le meilleur prompt prêt à l'emploi qui produira un brief de design / UX riche, contraint et exploitable.",
   ),
+  def(
+    'reseaux-sociaux',
+    'Réseaux sociaux',
+    `
+Tu es un expert en réseaux sociaux. Rédige un post percutant et adapté à la plateforme.
+
+# Intention
+{{intent}}
+
+# Structure attendue
+1. Plateforme cible & format (LinkedIn, X, Instagram…)
+2. Accroche (1ère ligne qui stoppe le scroll)
+3. Corps : valeur claire, ton adapté
+4. Appel à l'action
+5. Hashtags pertinents (si adapté)
+
+# Contraintes
+- Adapter longueur et ton à la plateforme.
+- Accroche forte, pas de jargon inutile.
+`,
+    "À partir de l'intention de l'utilisateur et de la structure de référence, rédige le meilleur prompt prêt à l'emploi pour produire un post de réseau social percutant et adapté à sa plateforme.",
+  ),
+  def(
+    'resume-synthese',
+    'Résumé & synthèse',
+    `
+Tu es un expert en synthèse. Produis un résumé fidèle, clair et structuré.
+
+# Intention
+{{intent}}
+
+# Structure attendue
+1. Type de source & objectif du résumé
+2. Points clés (liste hiérarchisée)
+3. Niveau de détail / longueur cible
+4. Format de sortie (TL;DR, puces, paragraphe)
+
+# Contraintes
+- Rester fidèle à la source, ne rien inventer.
+- Hiérarchiser l'essentiel avant les détails.
+`,
+    "À partir de l'intention de l'utilisateur et de la structure de référence, rédige le meilleur prompt prêt à l'emploi pour produire un résumé / une synthèse fidèle, clair et bien structuré.",
+  ),
+  def(
+    'apprentissage',
+    'Apprentissage & explication',
+    `
+Tu es un pédagogue expert. Explique de façon claire et adaptée au niveau visé.
+
+# Intention
+{{intent}}
+
+# Structure attendue
+1. Sujet & niveau de l'apprenant
+2. Explication progressive (du simple au complexe)
+3. Analogies et exemples concrets
+4. Pièges fréquents à éviter
+5. Vérification de compréhension (questions)
+
+# Contraintes
+- Adapter le vocabulaire au niveau indiqué.
+- Privilégier exemples et analogies aux définitions abstraites.
+`,
+    "À partir de l'intention de l'utilisateur et de la structure de référence, rédige le meilleur prompt prêt à l'emploi pour obtenir une explication pédagogique claire, progressive et adaptée au niveau de l'apprenant.",
+  ),
+  def(
+    'ideation',
+    'Idéation & brainstorming',
+    `
+Tu es un facilitateur d'idéation. Génère des idées variées puis aide à les trier.
+
+# Intention
+{{intent}}
+
+# Structure attendue
+1. Problème / objectif & contraintes
+2. Angles d'exploration
+3. Génération divergente (beaucoup d'idées variées)
+4. Critères d'évaluation
+5. Sélection des meilleures idées + justification
+
+# Contraintes
+- D'abord diverger (quantité), puis converger (tri).
+- Idées concrètes et actionnables.
+`,
+    "À partir de l'intention de l'utilisateur et de la structure de référence, rédige le meilleur prompt prêt à l'emploi pour générer des idées variées (divergence) puis les évaluer et sélectionner (convergence).",
+  ),
 ];
 
 /** Renvoie la définition système pour un slug, ou `undefined`. */
@@ -176,6 +263,26 @@ export const SYSTEM_CATEGORY_EXAMPLES: Readonly<Record<string, readonly string[]
     'Refondre l’écran d’onboarding d’une app de méditation',
     'Un design system minimaliste pour un dashboard analytique',
     'Améliorer le tunnel de paiement d’un site e-commerce',
+  ],
+  'reseaux-sociaux': [
+    'Un post LinkedIn pour annoncer une levée de fonds',
+    'Un thread X sur 5 erreurs de débutant en JavaScript',
+    'Une légende Instagram pour le lancement d’un produit',
+  ],
+  'resume-synthese': [
+    'Résumer cet article de 10 pages en 5 points clés',
+    'Synthétiser les décisions d’une réunion d’équipe',
+    'Un TL;DR d’un rapport trimestriel',
+  ],
+  apprentissage: [
+    'Explique-moi les closures en JavaScript',
+    'Comprendre la TVA pour un auto-entrepreneur',
+    'Les bases du machine learning pour un débutant',
+  ],
+  ideation: [
+    '10 idées de noms pour une app de cuisine',
+    'Des angles pour une campagne marketing écolo',
+    'Idées de fonctionnalités pour un SaaS RH',
   ],
 };
 

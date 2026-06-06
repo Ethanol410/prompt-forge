@@ -813,6 +813,31 @@ export function PromptForgeApp({
     showToast('Template exporté ✓');
   }
 
+  /** Télécharge un template d'exemple pour montrer le format attendu à l'import. */
+  function handleDownloadExample(): void {
+    const example = buildUserCategory({
+      id: 'example',
+      templateId: 'example-tpl',
+      name: 'Exemple — Tweet viral',
+      skeleton:
+        'Tu es un expert des réseaux sociaux.\n\n# Intention\n{{intent}}\n\n# Plateforme\n{{plateforme}}\n\n# Contraintes\n- Accroche forte, 1 idée claire, 2-3 hashtags pertinents.',
+      metaPrompt:
+        'Optimise ce prompt pour produire un tweet court, accrocheur et adapté à la plateforme indiquée.',
+      params: [
+        {
+          key: 'plateforme',
+          label: 'Plateforme',
+          type: 'select',
+          required: false,
+          defaultValue: 'X',
+          options: ['X', 'LinkedIn', 'Instagram'],
+        },
+      ],
+    });
+    downloadFile(exportTemplate(example), 'exemple.promptforge.json', 'application/json');
+    showToast('Exemple téléchargé ✓');
+  }
+
   /** Importe un template depuis un fichier JSON et l'ajoute aux catégories perso. */
   async function handleImportFile(file: File): Promise<void> {
     try {
@@ -1025,6 +1050,12 @@ export function PromptForgeApp({
             }}
           />
         </div>
+        <button
+          className="-mt-1 self-start font-body text-xs text-accent2 underline hover:text-ink"
+          onClick={handleDownloadExample}
+        >
+          Pas de fichier ? Télécharger un exemple
+        </button>
 
         <div className="mt-2 flex items-center justify-between">
           <h2 className="font-hand text-lg">Historique ({history.length})</h2>
@@ -1726,36 +1757,56 @@ export function PromptForgeApp({
             <h3 className="mb-2 font-hand text-xl">
               {editingId ? 'Éditer le template' : 'Nouveau template'}
             </h3>
+            <p className="mb-3 font-body text-xs text-ink/60">
+              Donne un nom et explique ce que l’IA doit produire. C’est tout — le reste est optionnel.
+            </p>
+
+            <label className="mb-1 block font-hand text-base">Nom</label>
             <input
               ref={nameInputRef}
-              className="mb-2 w-full rounded-lg border-2 border-ink bg-paper p-2 font-body"
-              placeholder="Nom de la catégorie"
+              className="mb-3 w-full rounded-lg border-2 border-ink bg-paper p-2 font-body"
+              placeholder="ex. « Tweet viral », « Fiche produit »"
               value={formName}
               onChange={(e) => setFormName(e.target.value)}
               aria-label="nom du template"
             />
+
+            <label className="mb-1 block font-hand text-base">Que doit faire l’IA ?</label>
             <textarea
-              className="mb-2 h-28 w-full rounded-lg border-2 border-ink bg-paper p-2 font-mono text-xs"
-              placeholder="Squelette — doit contenir {{intent}}"
-              value={formSkeleton}
-              onChange={(e) => setFormSkeleton(e.target.value)}
-              aria-label="squelette"
-            />
-            <textarea
-              className="mb-2 h-20 w-full rounded-lg border-2 border-ink bg-paper p-2 font-body text-xs"
-              placeholder="Méta-prompt — instruction d'optimisation LLM"
+              className="mb-1 h-24 w-full rounded-lg border-2 border-ink bg-paper p-2 font-body text-sm"
+              placeholder="ex. « Rédige un tweet court et accrocheur : une accroche forte, 1 idée claire, 2-3 hashtags pertinents, ton dynamique. »"
               value={formMeta}
               onChange={(e) => setFormMeta(e.target.value)}
-              aria-label="méta-prompt"
+              aria-label="instruction pour l'IA"
             />
+            <p className="mb-3 font-body text-xs text-ink/50">
+              Décris le rôle, le style et le résultat attendu. Ton texte du moment sera ajouté
+              automatiquement.
+            </p>
 
-            <div className="mb-2 rounded-lg border-2 border-ink/30 p-2">
-              <div className="mb-1 flex items-center justify-between">
-                <span className="font-hand text-base">Variables (optionnel)</span>
-                <button className="font-hand text-sm text-accent" onClick={addFormParam}>
-                  + ajouter
-                </button>
-              </div>
+            <details className="mb-2 rounded-lg border-2 border-ink/30 p-2">
+              <summary className="cursor-pointer font-hand text-base">
+                Options avancées (facultatif)
+              </summary>
+              <div className="mt-3">
+                <label className="mb-1 block font-hand text-sm">Squelette / structure</label>
+                <p className="mb-1 font-body text-xs text-ink/50">
+                  {'Structure de référence. {{intent}} marque où ton texte est inséré — garde-le.'}
+                </p>
+                <textarea
+                  className="mb-3 h-28 w-full rounded-lg border-2 border-ink bg-paper p-2 font-mono text-xs"
+                  value={formSkeleton}
+                  onChange={(e) => setFormSkeleton(e.target.value)}
+                  aria-label="squelette"
+                />
+
+                <div className="rounded-lg border-2 border-ink/30 p-2">
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="font-hand text-base">Variables (optionnel)</span>
+                    <button className="font-hand text-sm text-accent" onClick={addFormParam}>
+                      + ajouter
+                    </button>
+                  </div>
               {formParams.length === 0 && (
                 <p className="font-body text-xs text-ink/50">
                   {'Aucune variable. Référence {{clé}} dans le squelette pour la rendre saisissable.'}
@@ -1816,7 +1867,9 @@ export function PromptForgeApp({
                   </button>
                 </div>
               ))}
-            </div>
+                  </div>
+                </div>
+              </details>
 
             {formError && (
               <p className="mb-2 rounded-lg border-2 border-danger bg-paper p-2 font-body text-xs text-danger">

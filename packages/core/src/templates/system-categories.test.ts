@@ -2,16 +2,25 @@ import { describe, it, expect } from 'vitest';
 import { SYSTEM_CATEGORIES, getSystemCategoryBySlug } from './system-categories.js';
 
 describe('SYSTEM_CATEGORIES', () => {
-  it('contient exactement les 4 catégories système du MVP', () => {
+  it('contient les catégories système (4 MVP + 4 ajoutées)', () => {
     const slugs = SYSTEM_CATEGORIES.map((c) => c.category.slug);
-    expect(slugs).toEqual(['prd-technique', 'code', 'email-comms', 'design-ux']);
+    expect(slugs).toEqual([
+      'prd-technique',
+      'code',
+      'email-comms',
+      'design-ux',
+      'reseaux-sociaux',
+      'resume-synthese',
+      'apprentissage',
+      'ideation',
+    ]);
   });
 
   it('a des slugs et ids uniques', () => {
     const slugs = new Set(SYSTEM_CATEGORIES.map((c) => c.category.slug));
     const ids = new Set(SYSTEM_CATEGORIES.map((c) => c.category.id));
-    expect(slugs.size).toBe(4);
-    expect(ids.size).toBe(4);
+    expect(slugs.size).toBe(SYSTEM_CATEGORIES.length);
+    expect(ids.size).toBe(SYSTEM_CATEGORIES.length);
   });
 
   it('relie correctement category.templateId et template.id, tout est builtin/system', () => {
