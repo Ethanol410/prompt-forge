@@ -118,6 +118,13 @@ export interface PromptForgeAppProps {
 
 const secretRef = (type: ProviderType): string => `provider:${type}`;
 
+// Couleur de marque par cible d'export (classes littérales pour la détection Tailwind).
+const LLM_BUTTON_COLOR: Record<LlmTarget, string> = {
+  chatgpt: 'bg-[#10a37f]',
+  claude: 'bg-[#d97757]',
+  gemini: 'bg-[#4285f4]',
+};
+
 export function PromptForgeApp({
   deps,
   providers,
@@ -1022,7 +1029,7 @@ export function PromptForgeApp({
                       {LLM_TARGETS.map((t) => (
                         <button
                           key={t.target}
-                          className="rounded-lg border-2 border-ink bg-accent2 px-2 py-1 font-hand text-base text-paper shadow-sketch-sm"
+                          className={`rounded-lg border-2 border-ink px-2 py-1 font-hand text-base text-paper shadow-sketch-sm ${LLM_BUTTON_COLOR[t.target]}`}
                           onClick={() => void handleOpenInLlm(t.target, v.prompt)}
                           title={
                             t.prefills
