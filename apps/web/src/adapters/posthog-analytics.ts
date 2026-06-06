@@ -10,7 +10,7 @@ import type { Analytics, AnalyticsEvent } from '@promptforge/core';
 // est désactivée (no-op). Le token reste néanmoins visible dans le bundle navigateur livré
 // (inhérent à toute analytics client) — c'est un token public « write-only », pas un secret.
 const KEY = import.meta.env.VITE_PUBLIC_POSTHOG_KEY;
-const HOST = import.meta.env.VITE_PUBLIC_POSTHOG_HOST ?? 'https://us.i.posthog.com';
+const HOST = import.meta.env.VITE_PUBLIC_POSTHOG_HOST ?? 'https://eu.i.posthog.com';
 
 export class PostHogAnalytics implements Analytics {
   private ready = false;

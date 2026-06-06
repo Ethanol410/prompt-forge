@@ -17,7 +17,7 @@ function strictCspPlugin(): Plugin {
     // `data:` requis : Vite inline certaines sous-polices (@fontsource) en data-URI au build.
     // Une police data-URI est inerte (aucune exécution) → la CSP reste stricte.
     "font-src 'self' data:",
-    "connect-src 'self' https://api.anthropic.com https://openrouter.ai https://us.i.posthog.com https://us-assets.i.posthog.com http://localhost:* http://127.0.0.1:*",
+    "connect-src 'self' https://api.anthropic.com https://openrouter.ai https://eu.i.posthog.com http://localhost:* http://127.0.0.1:*",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
