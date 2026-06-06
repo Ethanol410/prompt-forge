@@ -1,7 +1,8 @@
-import type { ReactElement } from 'react';
+import { useEffect, type ReactElement } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { PromptForgeApp, type ProviderChoice, type AppDeps } from '@promptforge/ui';
 import { NoopAnalytics } from '@promptforge/core';
+import { checkForUpdates } from './updater.js';
 import { KeychainSecretStore } from './adapters/keychain-secret-store.js';
 import { TauriHttpClient } from './adapters/tauri-http-client.js';
 import { SqliteHistoryStore } from './adapters/sqlite-history-store.js';
@@ -88,5 +89,8 @@ const DESKTOP_PROVIDERS: readonly ProviderChoice[] = [
 ];
 
 export function App(): ReactElement {
+  useEffect(() => {
+    void checkForUpdates();
+  }, []);
   return <PromptForgeApp deps={deps} providers={DESKTOP_PROVIDERS} platformLabel="desktop" />;
 }

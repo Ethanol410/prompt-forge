@@ -43,10 +43,13 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Clé de signature des MISES À JOUR (Tauri updater, gratuite). Génère latest.json signé.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
         with:
           projectPath: apps/desktop
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
           releaseName: 'PromptForge ${{ github.event.inputs.tag || github.ref_name }}'
-          releaseBody: 'Installeurs Windows (non signés) générés automatiquement. SmartScreen → « Informations complémentaires → Exécuter quand même ».'
+          releaseBody: 'Installeurs Windows (non signés) générés automatiquement. SmartScreen → « Informations complémentaires → Exécuter quand même ». Mises à jour automatiques activées.'
           releaseDraft: false
           prerelease: false

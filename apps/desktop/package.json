@@ -15,7 +15,9 @@
     "@promptforge/ui": "*",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-http": "^2.0.0",
+    "@tauri-apps/plugin-process": "^2.0.0",
     "@tauri-apps/plugin-sql": "^2.0.0",
+    "@tauri-apps/plugin-updater": "^2.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
