@@ -10,6 +10,9 @@ import {
   findCategoryById,
   buildUserCategory,
   UserCategoryError,
+  exportTemplate,
+  parseTemplateImport,
+  TemplateImportError,
   createProviderAdapter,
   optimizeStream,
   refineStream,
@@ -218,6 +221,15 @@ export function PromptForgeApp({
   // Affinage libre + diff entre versions.
   const [freeRefine, setFreeRefine] = useState('');
   const [diffFor, setDiffFor] = useState<string | null>(null);
+
+  // Recherche / filtre historique.
+  const [historyQuery, setHistoryQuery] = useState('');
+  const [historyFilter, setHistoryFilter] = useState<'all' | 'favorites'>('all');
+
+  // Signal de satisfaction (« ça t'a aidé ? ») après copie/export, une fois par génération.
+  const [satisfyForId, setSatisfyForId] = useState<string | null>(null);
+  const satisfyAskedRef = useRef<Set<string>>(new Set());
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void refreshHistory();
@@ -774,11 +786,78 @@ export function PromptForgeApp({
     else window.open(url, '_blank', 'noopener,noreferrer');
   }
 
+  async function handleToggleFavorite(g: Generation): Promise<void> {
+    await deps.historyStore.setFavorite(g.id, !g.favorite);
+    await refreshHistory();
+  }
+
+  function downloadFile(content: string, filename: string, mime: string): void {
+    const url = URL.createObjectURL(new Blob([content], { type: mime }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  /** Exporte la catégorie perso courante en fichier JSON partageable. */
+  function handleExportTemplate(): void {
+    downloadFile(
+      exportTemplate(selectedCategory),
+      `${selectedCategory.category.slug || 'template'}.promptforge.json`,
+      'application/json',
+    );
+    deps.analytics.track({ name: 'template_exported' });
+    showToast('Template exporté ✓');
+  }
+
+  /** Importe un template depuis un fichier JSON et l'ajoute aux catégories perso. */
+  async function handleImportFile(file: File): Promise<void> {
+    try {
+      const text = await file.text();
+      const imported = parseTemplateImport(text);
+      const bundle = buildUserCategory({
+        id: crypto.randomUUID(),
+        templateId: crypto.randomUUID(),
+        ...imported,
+      });
+      await deps.templateStore.save(bundle);
+      await refreshCategories();
+      setCategoryId(bundle.category.id);
+      deps.analytics.track({ name: 'template_imported' });
+      showToast(`Template « ${bundle.category.name} » importé ✓`);
+    } catch (cause) {
+      if (cause instanceof TemplateImportError || cause instanceof UserCategoryError) {
+        setError(`Import impossible : ${cause.message}`);
+      } else {
+        setError('Import impossible : fichier invalide.');
+      }
+    }
+  }
+
+  /** Propose le signal de satisfaction pour la dernière version (une seule fois). */
+  function maybeAskSatisfaction(): void {
+    const last = versions[versions.length - 1];
+    if (last && !satisfyAskedRef.current.has(last.id)) setSatisfyForId(last.id);
+  }
+
+  function answerSatisfaction(helpful: boolean): void {
+    if (satisfyForId) {
+      satisfyAskedRef.current.add(satisfyForId);
+      deps.analytics.track({ name: 'satisfaction', helpful });
+      void deps.historyStore.setRating(satisfyForId, helpful ? 'up' : 'down').then(refreshHistory);
+    }
+    setSatisfyForId(null);
+  }
+
   async function handleCopy(prompt: string): Promise<void> {
     try {
       await navigator.clipboard.writeText(prompt);
       deps.analytics.track({ name: 'prompt_copied', category: selectedCategory.category.slug });
       showToast('Prompt copié ✓');
+      maybeAskSatisfaction();
     } catch {
       showToast('Copie impossible (presse-papier bloqué)');
     }
@@ -798,6 +877,7 @@ export function PromptForgeApp({
     anchor.remove();
     URL.revokeObjectURL(url);
     showToast(`${file.filename} téléchargé ✓`);
+    maybeAskSatisfaction();
   }
 
   async function handleOpenInLlm(target: LlmTarget, prompt: string): Promise<void> {
@@ -823,6 +903,7 @@ export function PromptForgeApp({
           ? `Prompt copié — colle-le dans ${label} (Ctrl+V)`
           : `Ouverture de ${label} — copie le prompt manuellement`,
     );
+    maybeAskSatisfaction();
   }
 
   async function handleClearAll(): Promise<void> {
@@ -918,12 +999,32 @@ export function PromptForgeApp({
         >
           + Nouvelle conversation
         </button>
-        <button
-          className="rounded-lg border-2 border-ink bg-paper px-3 py-1 font-hand text-base shadow-sketch-sm"
-          onClick={openNewTemplate}
-        >
-          + Nouveau template
-        </button>
+        <div className="flex gap-2">
+          <button
+            className="flex-1 rounded-lg border-2 border-ink bg-paper px-3 py-1 font-hand text-base shadow-sketch-sm"
+            onClick={openNewTemplate}
+          >
+            + Nouveau template
+          </button>
+          <button
+            className="rounded-lg border-2 border-ink bg-paper px-3 py-1 font-hand text-base shadow-sketch-sm"
+            onClick={() => importInputRef.current?.click()}
+            title="Importer un template (.json)"
+          >
+            ⤒ Importer
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void handleImportFile(file);
+              e.target.value = '';
+            }}
+          />
+        </div>
 
         <div className="mt-2 flex items-center justify-between">
           <h2 className="font-hand text-lg">Historique ({history.length})</h2>
@@ -933,17 +1034,59 @@ export function PromptForgeApp({
             </button>
           )}
         </div>
+        {history.length > 0 && (
+          <div className="flex gap-2">
+            <input
+              type="search"
+              value={historyQuery}
+              onChange={(e) => setHistoryQuery(e.target.value)}
+              placeholder="Rechercher…"
+              aria-label="Rechercher dans l'historique"
+              className="min-w-0 flex-1 rounded-lg border-2 border-ink/40 bg-paper px-2 py-1 font-body text-xs"
+            />
+            <button
+              className={`rounded-lg border-2 border-ink px-2 py-1 font-hand text-sm shadow-sketch-sm ${
+                historyFilter === 'favorites' ? 'bg-highlight' : 'bg-paper'
+              }`}
+              onClick={() => setHistoryFilter((f) => (f === 'favorites' ? 'all' : 'favorites'))}
+              aria-pressed={historyFilter === 'favorites'}
+              title="Afficher seulement les favoris"
+            >
+              ★
+            </button>
+          </div>
+        )}
         <ul className="flex-1 space-y-1 overflow-y-auto font-body text-xs text-ink/70">
           {history.length === 0 && <li className="text-ink/40">Aucune génération pour l'instant.</li>}
-          {history.slice(0, 40).map((g) => (
-            <li key={g.id} className="flex items-center gap-1">
-              <button
-                className="block min-w-0 flex-1 truncate rounded px-1 py-1 text-left hover:bg-ink/5"
-                onClick={() => handleLoadHistory(g)}
-                title={g.userIntent}
-              >
-                <span className="text-ink/40">{g.createdAt.slice(0, 10)}</span> · {g.userIntent}
-              </button>
+          {(() => {
+            const q = historyQuery.trim().toLowerCase();
+            const filtered = history
+              .filter((g) => (historyFilter === 'favorites' ? g.favorite : true))
+              .filter((g) => (q ? g.userIntent.toLowerCase().includes(q) : true));
+            const sorted = [...filtered].sort(
+              (a, b) => Number(b.favorite ?? false) - Number(a.favorite ?? false),
+            );
+            if (sorted.length === 0) {
+              return <li className="text-ink/40">Aucun résultat.</li>;
+            }
+            return sorted.slice(0, 60).map((g) => (
+              <li key={g.id} className="flex items-center gap-1">
+                <button
+                  className={`shrink-0 rounded px-1 ${g.favorite ? 'text-accent' : 'text-ink/30 hover:text-accent'}`}
+                  onClick={() => void handleToggleFavorite(g)}
+                  aria-label={g.favorite ? 'retirer des favoris' : 'ajouter aux favoris'}
+                  aria-pressed={g.favorite ?? false}
+                  title="Épingler / favori"
+                >
+                  ★
+                </button>
+                <button
+                  className="block min-w-0 flex-1 truncate rounded px-1 py-1 text-left hover:bg-ink/5"
+                  onClick={() => handleLoadHistory(g)}
+                  title={g.userIntent}
+                >
+                  <span className="text-ink/40">{g.createdAt.slice(0, 10)}</span> · {g.userIntent}
+                </button>
               <button
                 className="shrink-0 rounded px-1 text-ink/40 hover:text-danger"
                 onClick={() => void handleDeleteHistory(g)}
@@ -953,7 +1096,8 @@ export function PromptForgeApp({
                 ✕
               </button>
             </li>
-          ))}
+            ));
+          })()}
         </ul>
 
         {desktopDownloadUrl && (
@@ -993,6 +1137,13 @@ export function PromptForgeApp({
                     ))}
                   </select>
                 </div>
+                <button
+                  className="shrink-0 font-hand text-sm text-accent2"
+                  onClick={handleExportTemplate}
+                  title="Exporter ce template en JSON (partage / sauvegarde)"
+                >
+                  Exporter
+                </button>
                 {selectedCategory.category.owner === 'user' && (
                   <>
                     <button
@@ -1686,6 +1837,36 @@ export function PromptForgeApp({
                 Annuler
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Signal de satisfaction (après copie / export) */}
+      {satisfyForId && (
+        <div className="fixed inset-x-0 bottom-20 z-50 flex justify-center px-4">
+          <div className="animate-pf-in card-sketch flex items-center gap-3 px-4 py-2 font-hand text-base text-ink">
+            <span>Ça t’a aidé ?</span>
+            <button
+              className="rounded-lg border-2 border-ink bg-paper px-2 shadow-sketch-sm"
+              onClick={() => answerSatisfaction(true)}
+              aria-label="oui, utile"
+            >
+              👍
+            </button>
+            <button
+              className="rounded-lg border-2 border-ink bg-paper px-2 shadow-sketch-sm"
+              onClick={() => answerSatisfaction(false)}
+              aria-label="non, pas utile"
+            >
+              👎
+            </button>
+            <button
+              className="text-ink/40 hover:text-ink"
+              onClick={() => setSatisfyForId(null)}
+              aria-label="ignorer"
+            >
+              ✕
+            </button>
           </div>
         </div>
       )}

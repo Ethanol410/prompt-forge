@@ -1,9 +1,22 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+
+/** Va sur l'app et écarte l'onboarding (1er lancement) + le bandeau de consentement. */
+async function openApp(page: Page): Promise<void> {
+  await page.goto('/app');
+  // L'onboarding s'affiche après hydratation (lecture des prefs) → on l'attend puis on l'écarte.
+  const skip = page.getByRole('button', { name: 'Passer' });
+  await skip.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+  if (await skip.isVisible().catch(() => false)) await skip.click();
+  const consent = page.getByRole('button', { name: 'OK', exact: true });
+  if (await consent.isVisible().catch(() => false)) await consent.click();
+}
 
 test.describe('PromptForge — flux web', () => {
-  test('génère un prompt (fallback déterministe hors-ligne)', async ({ page }) => {
-    await page.goto('/');
+  test.beforeEach(async ({ page }) => {
+    await openApp(page);
+  });
 
+  test('génère un prompt (fallback déterministe hors-ligne)', async ({ page }) => {
     // Provider local Ollama (pas de clé requise) : injoignable en test → fallback déterministe.
     await page.getByRole('combobox').nth(1).selectOption('ollama');
     await page.getByLabel('Décris ton besoin').fill('Un prompt de test e2e');
@@ -20,7 +33,6 @@ test.describe('PromptForge — flux web', () => {
   });
 
   test('crée un template personnalisé et le sélectionne', async ({ page }) => {
-    await page.goto('/');
     await page.getByRole('button', { name: '+ Nouveau template' }).click();
 
     const dialog = page.getByRole('dialog');
@@ -33,7 +45,6 @@ test.describe('PromptForge — flux web', () => {
   });
 
   test('supprime une seule entrée d’historique', async ({ page }) => {
-    await page.goto('/');
     await page.getByRole('combobox').nth(1).selectOption('ollama');
     await page.getByLabel('Décris ton besoin').fill('Entrée à supprimer');
     await page.getByRole('button', { name: 'Générer ✶' }).click();

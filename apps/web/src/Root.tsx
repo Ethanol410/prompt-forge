@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
 import { App } from './App.js';
 import { Landing } from './landing/Landing.js';
+import { ConsentBanner } from './ConsentBanner.js';
 import { DESKTOP_DOWNLOAD_URL, DESKTOP_RELEASES_URL, DESKTOP_VERSION } from './config.js';
 
 const APP_PATH = '/app';
@@ -26,16 +27,22 @@ export function Root(): ReactElement {
     window.scrollTo(0, 0);
   }, []);
 
-  if (path === APP_PATH) {
-    return <App onNavigateHome={() => navigate('/')} />;
-  }
+  const page =
+    path === APP_PATH ? (
+      <App onNavigateHome={() => navigate('/')} />
+    ) : (
+      <Landing
+        onLaunch={() => navigate(APP_PATH)}
+        downloadUrl={DESKTOP_DOWNLOAD_URL}
+        releasesUrl={DESKTOP_RELEASES_URL}
+        version={DESKTOP_VERSION}
+      />
+    );
 
   return (
-    <Landing
-      onLaunch={() => navigate(APP_PATH)}
-      downloadUrl={DESKTOP_DOWNLOAD_URL}
-      releasesUrl={DESKTOP_RELEASES_URL}
-      version={DESKTOP_VERSION}
-    />
+    <>
+      {page}
+      <ConsentBanner />
+    </>
   );
 }
