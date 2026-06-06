@@ -11,7 +11,7 @@ const GITHUB_OWNER = 'Ethanol410';
 const GITHUB_REPO = 'prompt-forge';
 
 /** Version desktop courante (doit correspondre à `apps/desktop/src-tauri/tauri.conf.json`). */
-export const DESKTOP_VERSION = '0.1.0';
+export const DESKTOP_VERSION = '0.1.1';
 
 /** Page du dépôt. */
 export const GITHUB_REPO_URL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}`;
