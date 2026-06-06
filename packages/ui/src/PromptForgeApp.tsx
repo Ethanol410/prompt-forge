@@ -29,10 +29,14 @@ import {
   scorePrompt,
   estimateCost,
   verifyApiKey,
+  listModels,
+  changelogSince,
+  LATEST_CHANGELOG_VERSION,
   getCategoryExamples,
   buildLlmChatUrl,
   LLM_TARGETS,
   type LlmTarget,
+  type ChangelogEntry,
   type ExportFormat,
   type ProviderType,
   type Generation,
@@ -166,6 +170,10 @@ export function PromptForgeApp({
   const [editorOpen, setEditorOpen] = useState(false);
   /** Étape d'onboarding (null = fermé ; 0/1/2 = étapes au 1er lancement). */
   const [onboardingStep, setOnboardingStep] = useState<number | null>(null);
+  /** Modèles disponibles du provider courant (pour le sélecteur ; vide = saisie libre). */
+  const [models, setModels] = useState<readonly string[]>([]);
+  /** Entrées de changelog à montrer au lancement (vide = rien à montrer). */
+  const [changelogEntries, setChangelogEntries] = useState<readonly ChangelogEntry[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formName, setFormName] = useState('');
   const [formSkeleton, setFormSkeleton] = useState(DEFAULT_SKELETON);
@@ -243,6 +251,10 @@ export function PromptForgeApp({
       }
       const onboarded = await deps.prefsStore.get<boolean>('onboarded');
       if (!onboarded) setOnboardingStep(0);
+      // « Quoi de neuf » : montré seulement aux utilisateurs existants après une mise à jour.
+      const seen = await deps.prefsStore.get<string>('changelogSeen');
+      if (seen == null) void deps.prefsStore.set('changelogSeen', LATEST_CHANGELOG_VERSION);
+      else if (seen !== LATEST_CHANGELOG_VERSION) setChangelogEntries(changelogSince(seen));
       hydratedRef.current = true;
     })();
   }, []);
@@ -253,6 +265,11 @@ export function PromptForgeApp({
     deps.analytics.track({ name: 'onboarding_completed' });
   }
 
+  function closeChangelog(): void {
+    void deps.prefsStore.set('changelogSeen', LATEST_CHANGELOG_VERSION);
+    setChangelogEntries([]);
+  }
+
   // Sauvegarde des préférences (après hydratation, pour ne pas écraser avec les défauts).
   useEffect(() => {
     if (hydratedRef.current) void deps.prefsStore.set('lastCategoryId', categoryId);
@@ -260,6 +277,12 @@ export function PromptForgeApp({
   useEffect(() => {
     if (hydratedRef.current) void deps.prefsStore.set('lastProviderType', providerType);
   }, [providerType]);
+
+  // Récupère les modèles du provider (au changement de provider ou après enregistrement d'une clé).
+  useEffect(() => {
+    setModels([]);
+    void refreshModels();
+  }, [providerType, keySaved]);
 
   // Auto-scroll du fil quand le contenu change (comme un chat).
   useEffect(() => {
@@ -384,6 +407,15 @@ export function PromptForgeApp({
 
   async function refreshHistory(): Promise<void> {
     setHistory(await deps.historyStore.list());
+  }
+
+  /** Récupère la liste des modèles du provider courant (pour le sélecteur). Silencieux en cas d'échec. */
+  async function refreshModels(): Promise<void> {
+    const key = provider.needsKey
+      ? ((await deps.secretStore.get(secretRef(provider.type))) ?? '')
+      : '';
+    const list = await listModels(provider.type, key, deps.httpClient, baseUrl || undefined);
+    setModels(list);
   }
 
   async function handleSaveKey(): Promise<void> {
@@ -1196,12 +1228,31 @@ export function PromptForgeApp({
 
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <input
-              className="w-40 rounded-lg border-2 border-ink bg-paper p-1.5 font-body text-sm"
+              className="w-44 rounded-lg border-2 border-ink bg-paper p-1.5 font-body text-sm"
               value={model}
               onChange={(e) => setModel(e.target.value)}
               placeholder="modèle"
               aria-label="modèle"
+              list="pf-models"
             />
+            <datalist id="pf-models">
+              {models.map((m) => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
+            <button
+              type="button"
+              className="shrink-0 rounded-lg border-2 border-ink bg-paper px-2 py-1.5 font-hand text-sm shadow-sketch-sm"
+              onClick={() => void refreshModels()}
+              title={
+                models.length > 0
+                  ? `${models.length} modèles — rafraîchir la liste`
+                  : 'Rafraîchir la liste des modèles'
+              }
+              aria-label="rafraîchir la liste des modèles"
+            >
+              ↻
+            </button>
             {provider.isLocal && (
               <input
                 className="w-52 rounded-lg border-2 border-ink bg-paper p-1.5 font-body text-sm"
@@ -1719,6 +1770,43 @@ export function PromptForgeApp({
                   </button>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quoi de neuf (après mise à jour) */}
+      {changelogEntries.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4">
+          <div
+            className="card-sketch w-full max-w-lg p-6"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Quoi de neuf"
+          >
+            <h2 className="font-hand text-3xl">✦ Quoi de neuf</h2>
+            <div className="mt-3 max-h-[60vh] space-y-4 overflow-y-auto">
+              {changelogEntries.map((entry) => (
+                <div key={entry.version}>
+                  <div className="font-hand text-xl">
+                    v{entry.version}{' '}
+                    <span className="font-body text-xs text-ink/50">· {entry.date}</span>
+                  </div>
+                  <ul className="mt-1 space-y-1 font-body text-sm text-ink/75">
+                    {entry.items.map((item, i) => (
+                      <li key={i}>• {item}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+            <div className="mt-6 flex justify-end">
+              <button
+                className="rounded-lg border-2 border-ink bg-accent px-4 py-1.5 font-hand text-base text-ink shadow-sketch-sm"
+                onClick={closeChangelog}
+              >
+                Super !
+              </button>
             </div>
           </div>
         </div>
