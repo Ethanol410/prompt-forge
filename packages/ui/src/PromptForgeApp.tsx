@@ -25,7 +25,8 @@ import {
   missingRequiredParams,
   scorePrompt,
   estimateCost,
-  validateApiKeyFormat,
+  verifyApiKey,
+  getCategoryExamples,
   buildLlmChatUrl,
   LLM_TARGETS,
   type LlmTarget,
@@ -160,6 +161,8 @@ export function PromptForgeApp({
 
   // Éditeur de templates personnalisés (F-S1) + variables (F-C3).
   const [editorOpen, setEditorOpen] = useState(false);
+  /** Étape d'onboarding (null = fermé ; 0/1/2 = étapes au 1er lancement). */
+  const [onboardingStep, setOnboardingStep] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formName, setFormName] = useState('');
   const [formSkeleton, setFormSkeleton] = useState(DEFAULT_SKELETON);
@@ -227,9 +230,17 @@ export function PromptForgeApp({
       if (lastProvider && selectableProviders.some((p) => p.type === lastProvider)) {
         setProviderType(lastProvider);
       }
+      const onboarded = await deps.prefsStore.get<boolean>('onboarded');
+      if (!onboarded) setOnboardingStep(0);
       hydratedRef.current = true;
     })();
   }, []);
+
+  function finishOnboarding(): void {
+    void deps.prefsStore.set('onboarded', true);
+    setOnboardingStep(null);
+    deps.analytics.track({ name: 'onboarding_completed' });
+  }
 
   // Sauvegarde des préférences (après hydratation, pour ne pas écraser avec les défauts).
   useEffect(() => {
@@ -381,13 +392,22 @@ export function PromptForgeApp({
   }
 
   async function handleSaveKey(): Promise<void> {
-    if (!keyInput.trim()) return;
-    const validation = validateApiKeyFormat(provider.type, keyInput);
-    await deps.secretStore.set(secretRef(provider.type), keyInput.trim());
+    const key = keyInput.trim();
+    if (!key) return;
+    await deps.secretStore.set(secretRef(provider.type), key);
     setKeyInput('');
     setKeySaved(true);
     deps.analytics.track({ name: 'provider_configured', provider: provider.type });
-    showToast(validation.ok ? 'Clé enregistrée ✓' : `Enregistrée — ${validation.message}`);
+    showToast('Clé enregistrée — vérification…');
+    // Validation RÉELLE en ligne (appel GET gratuit, sans tokens). La clé reste enregistrée
+    // même si la vérification échoue (ex. hors-ligne). BYOK direct : la clé va au provider.
+    try {
+      const result = await verifyApiKey(provider.type, key, deps.httpClient, baseUrl || undefined);
+      deps.analytics.track({ name: 'key_validated', ok: result.ok });
+      showToast(result.ok ? 'Clé valide ✓' : `Clé enregistrée, mais : ${result.message}`);
+    } catch {
+      /* vérification impossible : clé conservée */
+    }
   }
 
   /** Persiste un prompt en historique et renvoie la version d'affichage correspondante. */
@@ -747,6 +767,13 @@ export function PromptForgeApp({
     abortRef.current?.abort();
   }
 
+  /** Ouvre une URL externe (navigateur système sur desktop via openExternal, nouvel onglet sur web). */
+  function openExternalUrl(url: string | undefined): void {
+    if (!url) return;
+    if (deps.openExternal) deps.openExternal(url);
+    else window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
   async function handleCopy(prompt: string): Promise<void> {
     try {
       await navigator.clipboard.writeText(prompt);
@@ -1039,6 +1066,18 @@ export function PromptForgeApp({
               </>
             )}
           </div>
+
+          {provider.helpUrl && (
+            <button
+              type="button"
+              className="mt-1 font-body text-xs text-accent2 underline hover:text-ink"
+              onClick={() => openExternalUrl(provider.helpUrl)}
+            >
+              {provider.isLocal
+                ? `Installer ${provider.label.replace(/\s*\((cloud|local)\)$/, '')} →`
+                : `Pas de clé ? Obtenir une clé ${provider.label.replace(/\s*\((cloud|local)\)$/, '')} →`}
+            </button>
+          )}
         </div>
 
         {/* Fil de génération */}
@@ -1336,6 +1375,22 @@ export function PromptForgeApp({
               ))}
             </div>
           )}
+          {intent.trim().length === 0 &&
+            getCategoryExamples(selectedCategory.category.slug).length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-2">
+                <span className="self-center font-hand text-sm text-ink/50">Exemples :</span>
+                {getCategoryExamples(selectedCategory.category.slug).map((ex) => (
+                  <button
+                    key={ex}
+                    type="button"
+                    className="rounded-full border-2 border-ink/40 bg-paper px-3 py-1 font-body text-xs text-ink/70 hover:border-ink hover:text-ink"
+                    onClick={() => setIntent(ex)}
+                  >
+                    {ex}
+                  </button>
+                ))}
+              </div>
+            )}
           <div className="flex items-end gap-2">
             <textarea
               className="h-20 flex-1 rounded-lg border-2 border-ink bg-paper p-2 font-body"
@@ -1374,6 +1429,135 @@ export function PromptForgeApp({
           </label>
         </div>
       </main>
+
+      {/* Onboarding 3 étapes (1er lancement) */}
+      {onboardingStep !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4">
+          <div
+            className="card-sketch w-full max-w-lg p-6"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Bienvenue sur PromptForge"
+          >
+            <div className="mb-2 font-body text-xs text-ink/50">Étape {onboardingStep + 1} / 3</div>
+
+            {onboardingStep === 0 && (
+              <>
+                <h2 className="font-hand text-3xl">Bienvenue sur PromptForge 👋</h2>
+                <p className="mt-2 font-body text-sm text-ink/75">
+                  En 30 secondes : choisis un fournisseur de modèle, connecte-le, puis génère ton
+                  premier prompt.
+                </p>
+                <label className="mt-4 block font-hand text-base">1. Choisis un provider</label>
+                <select
+                  className="mt-1 w-full rounded-lg border-2 border-ink bg-paper p-2 font-body"
+                  value={providerType}
+                  onChange={(e) => setProviderType(e.target.value as ProviderType)}
+                >
+                  {selectableProviders.map((p) => (
+                    <option key={p.type} value={p.type}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+
+            {onboardingStep === 1 && (
+              <>
+                <h2 className="font-hand text-3xl">
+                  2. Connecte {provider.label.replace(/\s*\((cloud|local)\)$/, '')}
+                </h2>
+                {provider.needsKey ? (
+                  <>
+                    <p className="mt-2 font-body text-sm text-ink/75">
+                      Colle ta clé d’API : elle est chiffrée localement et ne quitte jamais ton
+                      appareil.
+                    </p>
+                    <div className="mt-3 flex gap-2">
+                      <input
+                        type="password"
+                        className="min-w-0 flex-1 rounded-lg border-2 border-ink bg-paper p-2 font-body text-sm"
+                        value={keyInput}
+                        onChange={(e) => setKeyInput(e.target.value)}
+                        placeholder={keySaved ? 'clé enregistrée — saisir pour remplacer' : 'clé API'}
+                        aria-label="clé API"
+                      />
+                      <button
+                        className="rounded-lg border-2 border-ink bg-ink px-3 py-1.5 font-hand text-sm text-paper shadow-sketch-sm disabled:opacity-50"
+                        onClick={() => void handleSaveKey()}
+                        disabled={!keyInput.trim()}
+                      >
+                        Enregistrer
+                      </button>
+                    </div>
+                    {keySaved && <p className="mt-1 font-body text-xs text-success">Clé enregistrée ✓</p>}
+                  </>
+                ) : (
+                  <p className="mt-2 font-body text-sm text-ink/75">
+                    Modèle local : assure-toi que{' '}
+                    {provider.label.replace(/\s*\((cloud|local)\)$/, '')} tourne sur{' '}
+                    <code>{baseUrl}</code>.
+                  </p>
+                )}
+                {provider.helpUrl && (
+                  <button
+                    type="button"
+                    className="mt-2 font-body text-xs text-accent2 underline"
+                    onClick={() => openExternalUrl(provider.helpUrl)}
+                  >
+                    {provider.isLocal ? 'Installer →' : 'Obtenir une clé →'}
+                  </button>
+                )}
+              </>
+            )}
+
+            {onboardingStep === 2 && (
+              <>
+                <h2 className="font-hand text-3xl">3. À toi de jouer ✶</h2>
+                <p className="mt-2 font-body text-sm text-ink/75">
+                  Choisis une catégorie, décris ton besoin (ou clique un exemple), puis « Générer ✶ ».
+                  Le prompt apparaît : tu peux l’affiner et l’ouvrir dans ChatGPT / Claude / Gemini.
+                </p>
+              </>
+            )}
+
+            <div className="mt-6 flex items-center justify-between">
+              <button
+                className="font-hand text-base text-ink/50 hover:text-ink"
+                onClick={finishOnboarding}
+              >
+                Passer
+              </button>
+              <div className="flex gap-2">
+                {onboardingStep > 0 && (
+                  <button
+                    className="rounded-lg border-2 border-ink bg-paper px-3 py-1.5 font-hand text-base shadow-sketch-sm"
+                    onClick={() => setOnboardingStep((s) => (s ?? 0) - 1)}
+                  >
+                    Retour
+                  </button>
+                )}
+                {onboardingStep < 2 ? (
+                  <button
+                    className="rounded-lg border-2 border-ink bg-accent px-4 py-1.5 font-hand text-base text-ink shadow-sketch-sm"
+                    onClick={() => setOnboardingStep((s) => (s ?? 0) + 1)}
+                  >
+                    Suivant →
+                  </button>
+                ) : (
+                  <button
+                    className="rounded-lg border-2 border-ink bg-accent px-4 py-1.5 font-hand text-base text-ink shadow-sketch-sm"
+                    onClick={finishOnboarding}
+                  >
+                    Commencer ✦
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modale : éditeur de template */}
       {editorOpen && (
