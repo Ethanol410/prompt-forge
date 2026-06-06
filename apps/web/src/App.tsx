@@ -86,6 +86,26 @@ const WEB_PROVIDERS: readonly ProviderChoice[] = [
   },
 ];
 
+/**
+ * Vrai si la page est servie en HTTPS depuis un hôte distant (ex. Vercel).
+ * Dans ce cas, le navigateur bloque les appels vers `http://localhost` (mixed content /
+ * Private Network Access) : les modèles locaux ne sont accessibles que sur l'app desktop ou
+ * en dev local (`http://localhost`). On les marque alors comme indisponibles, plutôt que de
+ * laisser l'utilisateur tomber sur une erreur réseau confuse.
+ */
+function isRemoteHttps(): boolean {
+  if (typeof window === 'undefined') return false;
+  const { protocol, hostname } = window.location;
+  const isLoopback = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
+  return protocol === 'https:' && !isLoopback;
+}
+
+const RESOLVED_WEB_PROVIDERS: readonly ProviderChoice[] = isRemoteHttps()
+  ? WEB_PROVIDERS.map((p) =>
+      p.isLocal ? { ...p, disabled: true, disabledNote: 'app desktop ou dev local' } : p,
+    )
+  : WEB_PROVIDERS;
+
 export interface AppProps {
   /** Retour vers la landing (fourni par le routeur web). */
   readonly onNavigateHome?: () => void;
@@ -95,7 +115,7 @@ export function App({ onNavigateHome }: AppProps = {}): ReactElement {
   return (
     <PromptForgeApp
       deps={deps}
-      providers={WEB_PROVIDERS}
+      providers={RESOLVED_WEB_PROVIDERS}
       platformLabel="web"
       desktopDownloadUrl={DESKTOP_DOWNLOAD_URL}
       onNavigateHome={onNavigateHome}
