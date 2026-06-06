@@ -5,6 +5,7 @@ export { validateApiKeyFormat } from './validate.js';
 export type { KeyValidation } from './validate.js';
 export { verifyApiKey, providerIsLocal } from './verify.js';
 export type { KeyVerification } from './verify.js';
+export { listModels } from './list-models.js';
 export { AnthropicAdapter } from './anthropic.js';
 export { OllamaAdapter } from './ollama.js';
 export { OpenAiCompatibleAdapter } from './openai-compatible.js';

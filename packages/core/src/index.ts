@@ -17,6 +17,10 @@ export * from './templates/index.js';
 export { buildExport } from './export/format.js';
 export type { ExportFormat, ExportInput, ExportFile } from './export/format.js';
 
+// Journal des nouveautés (modale « Quoi de neuf »)
+export { CHANGELOG, LATEST_CHANGELOG_VERSION, changelogSince } from './changelog.js';
+export type { ChangelogEntry } from './changelog.js';
+
 // Utilitaires
 export { slugify } from './util/slug.js';
 
