@@ -136,17 +136,29 @@ fn secret_has(reference: String) -> Result<bool, String> {
     }
 }
 
+/// Ouvre une URL externe dans le navigateur système (export du prompt vers ChatGPT/Claude/Gemini).
+/// Passe par l'API native du plugin opener (hors système de scope JS) ; aucune clé n'est en jeu.
+#[tauri::command]
+fn open_external(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
+        .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             secret_set,
             secret_get,
             secret_delete,
             secret_has,
-            local_http_request
+            local_http_request,
+            open_external
         ])
         .run(tauri::generate_context!())
         .expect("erreur au démarrage de l'application Tauri");

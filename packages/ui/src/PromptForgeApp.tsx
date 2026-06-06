@@ -47,6 +47,11 @@ export interface AppDeps {
   readonly templateStore: TemplateStore;
   readonly prefsStore: PrefsStore;
   readonly analytics: Analytics;
+  /**
+   * Ouvre une URL externe. Optionnel : sur web, on retombe sur `window.open`. Sur desktop (Tauri),
+   * la plateforme injecte l'opener natif pour ouvrir le navigateur système de façon fiable.
+   */
+  readonly openExternal?: (url: string) => void;
 }
 
 const DEFAULT_SKELETON = `Tu es un expert. Produis un résultat de haute qualité.
@@ -655,7 +660,9 @@ export function PromptForgeApp({
     } catch {
       /* presse-papier indisponible : on ouvre quand même la discussion */
     }
-    window.open(buildLlmChatUrl(target, prompt), '_blank', 'noopener,noreferrer');
+    const url = buildLlmChatUrl(target, prompt);
+    if (deps.openExternal) deps.openExternal(url);
+    else window.open(url, '_blank', 'noopener,noreferrer');
     deps.analytics.track({ name: 'prompt_exported', target });
     showToast(
       info?.prefills

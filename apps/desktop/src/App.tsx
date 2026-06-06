@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { PromptForgeApp, type ProviderChoice, type AppDeps } from '@promptforge/ui';
 import { NoopAnalytics } from '@promptforge/core';
 import { KeychainSecretStore } from './adapters/keychain-secret-store.js';
@@ -15,6 +16,8 @@ const deps: AppDeps = {
   templateStore: new SqliteTemplateStore(),
   prefsStore: new SqlitePrefsStore(),
   analytics: new NoopAnalytics(),
+  // Ouvre l'export (ChatGPT/Claude/Gemini) dans le navigateur système, pas dans la webview Tauri.
+  openExternal: (url: string) => void invoke('open_external', { url }),
 };
 
 // Sur desktop : tous les providers, OpenAI inclus (HTTP natif Rust → pas de blocage CORS, D2).
